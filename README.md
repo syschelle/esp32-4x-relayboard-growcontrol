@@ -105,3 +105,4 @@ Pull requests and feature suggestions are welcome!
 
 - Built with the Arduino ESP32 core, Adafruit BME280 library, and PubSubClient for MQTT.
 - Inspired by the needs of home growers.
+- chatgpt.com
