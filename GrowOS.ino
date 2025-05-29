@@ -47,12 +47,12 @@ const char* SHELLY_USER = "admin";
 const char* SHELLY_PASS = "password";
 
 #define NTP_SERVER "de.pool.ntp.org"
-#define TZ_INFO "WEST-1DWEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00" // Western European Time
+#define TZ_INFO "WEST-1DWEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00"  // Western European Time
 
 
 // ====== Relay Configuration ======
 #define NUM_RELAYS 4
-const int relayPins[NUM_RELAYS] = {32,33,25,26};
+const int relayPins[NUM_RELAYS] = { 32, 33, 25, 26 };
 // NEU: menschliche Bezeichnungen für die Relais
 const char* relayNames[NUM_RELAYS] = {
   "left fans",
@@ -70,16 +70,16 @@ bool bmeAvailable = false;
 WebServer server(80);
 
 // ====== Shelly Status Cache ======
-bool shellyAvailable[NUM_SHELLY] = {false};
-bool shellyState[NUM_SHELLY] = {false};
+bool shellyAvailable[NUM_SHELLY] = { false };
+bool shellyState[NUM_SHELLY] = { false };
 unsigned long lastShellyPoll = 0;
-const unsigned long SHELLY_POLL_INTERVAL = 10000; // poll every 10 seconds
+const unsigned long SHELLY_POLL_INTERVAL = 10000;  // poll every 10 seconds
 
 // ====== initial freferences ======
 Preferences prefs;
-const char* phaseNames[4] = {"","Seedling/Clone","Vegetative","Flowering"};
+const char* phaseNames[4] = { "", "Seedling/Clone", "Vegetative", "Flowering" };
 // Default VPD targets per phase
-const float defaultVPDs[4] = {0.0f, 0.6f, 1.2f, 1.4f};
+const float defaultVPDs[4] = { 0.0f, 0.6f, 1.2f, 1.4f };
 // Default targets temperature
 const float defaultSetTemp = 22.0f;
 // Default mqtt disabled
@@ -101,6 +101,90 @@ void pollShellyStatuses();
 bool mqttConnect();
 void sendPushover(const char* message);
 
+struct Timer {
+  unsigned long interval;
+  unsigned long previousMillis;
+  void (*callback)();
+};
+
+// helper function for all shelly methods for Digest nativ 
+bool shellyRequestDigest(const char* host, const char* path, String* outPayload = nullptr) {
+  String url = String("http://") + host + path;
+
+  // 1) Initialize struct with zeros
+  esp_http_client_config_t config;
+  memset(&config, 0, sizeof(config));
+
+  // 2) Felder einzeln setzen
+  config.url       = url.c_str();
+  config.auth_type = HTTP_AUTH_TYPE_DIGEST;
+  config.username  = SHELLY_USER;
+  config.password  = SHELLY_PASS;
+
+  // 3) Create and execute client
+  esp_http_client_handle_t client = esp_http_client_init(&config);
+  esp_err_t err = esp_http_client_perform(client);
+
+  bool ok = false;
+  if (err == ESP_OK) {
+    int status = esp_http_client_get_status_code(client);
+    if (status == 200 && outPayload) {
+      // Read payload
+      int len = esp_http_client_get_content_length(client);
+      std::unique_ptr<char[]> buf(new char[len + 1]);
+      int r = esp_http_client_read_response(client, buf.get(), len);
+      buf[r < len ? r : len] = '\0';
+      *outPayload = String(buf.get());
+    }
+    ok = (status == 200);
+  }
+  esp_http_client_cleanup(client);
+  return ok;
+}
+
+//check ever minute the current vpd with target vpd, if current vpd higer than taget vpd then power on the humidifyer shelly
+//after 11 second the shelly fro the humidifyer turns automaticly off. Configure that in the Webinterface oft the shelly.
+void checkVpd() {
+  static unsigned long lastVPDcheck = 0;
+  int curPhase = prefs.getUInt("phase", 2);
+  String key = String("vpd_") + curPhase;
+  float targetVPD = prefs.getFloat(key.c_str(), defaultVPDs[curPhase]);
+  // current VPD already calculated as 'vpd'
+  if (lastVPD > (targetVPD)) {
+    //turn ON humidifyer fan
+    digitalWrite(relayPins[3], HIGH);
+    HTTPClient http;
+    String url = String("http://" + String(shellyHosts[0]) + "/relay/0?turn=on");
+    Serial.println("URL: " + url);
+    http.begin(url);
+    int httpResponseCode = http.GET();
+
+    if (httpResponseCode > 0) {
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+      String payload = http.getString();
+      Serial.println("Response payload: " + payload);
+    } else {
+      Serial.print("Error code: ");
+      if (debug) Serial.println(httpResponseCode);
+      int httpResponseCode = http.GET();
+      if (httpResponseCode > 0) {
+        if (debug) Serial.print("HTTP Response code: ");
+        if (debug) Serial.println(httpResponseCode);
+        String payload = http.getString();
+        if (debug) Serial.println("Response payload: " + payload);
+      }
+    }
+    http.end();
+    if (debug) Serial.println("Humidifier ON (VPD too high)");
+  }
+}
+
+Timer timers[] = {
+  // vpd timer every 1 minute
+  { 60000, 0, checkVpd },
+  // ... weitere Timer hier
+};
 
 void setup() {
   Serial.begin(115200);
@@ -119,7 +203,10 @@ void setup() {
   // Connect to Wi-Fi
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   Serial.print("Connecting");
-  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print('.'); }
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print('.');
+  }
   Serial.println(" connected");
   Serial.println(WiFi.localIP());
 
@@ -128,10 +215,10 @@ void setup() {
 
   Serial.println("syncing NTP time");
   struct tm local;
-  configTzTime(TZ_INFO, NTP_SERVER); // ESP32 system time NTP synchronized
-  getLocalTime(&local, 10000);      // try 10 s to synchronize
+  configTzTime(TZ_INFO, NTP_SERVER);  // ESP32 Systemzeit mit NTP Synchronisieren
+  getLocalTime(&local, 10000);        // Versuche 10 s zu Synchronisieren
   getLocalTime(&local);
-  Serial.println(&local, "now: %d.%m.%y  Zeit: %H:%M:%S");
+  Serial.println(&local, "now: %d.%m.%y  Zeit: %H:%M:%S");  // Zeit Datum Print Ausgabe formatieren
 
   // Persistent start date
   prefs.begin("growtent", false);
@@ -144,18 +231,18 @@ void setup() {
   }
   Serial.print("Start Date: ");
   Serial.println(sd);
-  
+
   // MQTT if enabled
   mqtt = prefs.getBool("mqtt", false);
   // Load Pushover credentials or defaults
-  mqttBroker    = prefs.getString("mqtt_broker", "127.0.0.1");
-  mqttPort  = prefs.getString("mqtt_port", "1883");
-  mqttUser  = prefs.getString("mqtt_user", "");
-  mqttPass  = prefs.getString("mqtt_pass", "");
+  mqttBroker = prefs.getString("mqtt_broker", "127.0.0.1");
+  mqttPort = prefs.getString("mqtt_port", "1883");
+  mqttUser = prefs.getString("mqtt_user", "");
+  mqttPass = prefs.getString("mqtt_pass", "");
 
-  if(server.hasArg("mqtt")) {
+  if (server.hasArg("mqtt")) {
     //uint16_t mqttPort = mqttPortStr.toInt();            // String → Integer
-    mqttClient.setServer(mqttBroker.c_str(), mqttPort.toInt()); // String → const char*
+    mqttClient.setServer(mqttBroker.c_str(), mqttPort.toInt());  // String → const char*
     mqttConnect();
   }
 
@@ -165,12 +252,12 @@ void setup() {
   server.on("/relay", HTTP_GET, handleRelay);
   server.on("/shelly", HTTP_GET, handleShelly);
   server.on("/phase", HTTP_POST, handlePhase);
-  server.on("/reboot", HTTP_GET, [](){
+  server.on("/reboot", HTTP_GET, []() {
     server.send(200, "text/plain", "Rebooting...");
     delay(100);
     ESP.restart();
   });
-  
+
   // Start server
   server.begin();
   Serial.println("Web server started");
@@ -181,123 +268,107 @@ void setup() {
 void loop() {
   server.handleClient();
 
-  if(!mqttClient.connected()) mqttConnect();
-    mqttClient.loop();
-
-  // Daily NTP resync at 01:00
-  struct tm now;
-  if (getLocalTime(&now)) {
-    if (now.tm_hour == 1 && now.tm_min == 0 && now.tm_mday != lastSyncDay) {
-      Serial.println("Performing daily NTP sync...");
-      if ( pushover ) sendPushover("Performing daily NTP sync...");
-      configTzTime(TZ_INFO, NTP_SERVER);
-      lastSyncDay = now.tm_mday;
+  unsigned long currentMillis = millis();
+  for (auto& t : timers) {
+    if (currentMillis - t.previousMillis >= t.interval) {
+      t.previousMillis = currentMillis;
+      t.callback();
     }
   }
+
+  if (mqtt) {
+    if (!mqttClient.connected()) mqttConnect();
+    mqttClient.loop();
+  }
+
+  // Daily NTP resync at 01:00
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo)) {
+    if (timeinfo.tm_hour == 1 && timeinfo.tm_min == 0 && timeinfo.tm_mday != lastSyncDay) {
+      Serial.println("Performing daily NTP sync...");
+      if (pushover) sendPushover("Performing daily NTP sync...");
+      configTzTime(TZ_INFO, NTP_SERVER);
+      lastSyncDay = timeinfo.tm_mday;
+    }
+  }
+
+
   if (millis() - lastShellyPoll >= SHELLY_POLL_INTERVAL) {
     pollShellyStatuses();
     lastShellyPoll = millis();
   }
 
   // Publish sensor MQTT
-  if(bmeAvailable){
+  if (bmeAvailable) {
     float t = bme.readTemperature();
     float h = bme.readHumidity();
-    float svp = 0.6108f * exp((17.27f*t)/(t+237.3f));
-    float vpd = svp - (h/100.0f)*svp;
+    float svp = 0.6108f * exp((17.27f * t) / (t + 237.3f));
+    float vpd = svp - (h / 100.0f) * svp;
     char buf[32];
-    if (isnan(lastTemperature) || fabs(t-lastTemperature)>=0.3) {
-      snprintf(buf,sizeof(buf),"%.1f",t);
-      if(server.hasArg("mqtt")) mqttClient.publish("growtent/temperature", buf);
+    if (isnan(lastTemperature) || fabs(t - lastTemperature) >= 0.3) {
+      snprintf(buf, sizeof(buf), "%.1f", t);
+      if (server.hasArg("mqtt")) mqttClient.publish("growtent/temperature", buf);
       lastTemperature = t;
     }
-    if (isnan(lastHumidity) || fabs(h-lastHumidity)>=0.5) {
-      snprintf(buf,sizeof(buf),"%.1f",h);
-      if(server.hasArg("mqtt")) mqttClient.publish("growtent/humidity", buf);
+    if (isnan(lastHumidity) || fabs(h - lastHumidity) >= 0.5) {
+      snprintf(buf, sizeof(buf), "%.1f", h);
+      if (server.hasArg("mqtt")) mqttClient.publish("growtent/humidity", buf);
       lastHumidity = h;
     }
-    if (isnan(lastVPD) || fabs(vpd-lastVPD)>=0.03) {
-      snprintf(buf,sizeof(buf),"%.2f",vpd);
-      if(server.hasArg("mqtt")) mqttClient.publish("growtent/vpd", buf);
+    if (isnan(lastVPD) || fabs(vpd - lastVPD) >= 0.03) {
+      snprintf(buf, sizeof(buf), "%.2f", vpd);
+      if (server.hasArg("mqtt")) mqttClient.publish("growtent/vpd", buf);
       lastVPD = vpd;
     }
   }
 
-   //upper fans automation 
-   if(getLocalTime(&now)){
-    int m = now.tm_min;
-    if(m != lastScheduleMinute){
+  //upper fans automation
+  struct tm schedTime;
+  if (getLocalTime(&schedTime)) {
+    int m = schedTime.tm_min;
+    if (m != lastScheduleMinute) {
       // Pushover if enabled
       pushover = prefs.getBool("pushover", false);
       // Load Pushover credentials or defaults
-      pushoverToken    = prefs.getString("pushover_token", "");
-      pushoverUserKey  = prefs.getString("pushover_user", "");
+      pushoverToken = prefs.getString("pushover_token", "");
+      pushoverUserKey = prefs.getString("pushover_user", "");
       // Left fans ON at :05, OFF at :25
-      if(m >= 5 && m <= 25) {
-        if(digitalRead(relayPins[0]) != HIGH) {
+      if (m >= 5 && m <= 25) {
+        if (digitalRead(relayPins[0]) != HIGH) {
           digitalWrite(relayPins[0], HIGH);
-          if ( pushover ) sendPushover(digitalRead(relayPins[0])?"Left fans ON":"Left fans OFF");
+          if (pushover) sendPushover(digitalRead(relayPins[0]) ? "Left fans ON" : "Left fans OFF");
           Serial.println("relay1 set to HIGH");
-        }// verify
+        }  // verify
       }
-      if(m > 25 || m < 5) {
-        if(digitalRead(relayPins[0]) != LOW) {
+      if (m > 25 || m < 5) {
+        if (digitalRead(relayPins[0]) != LOW) {
           digitalWrite(relayPins[0], LOW);
-          if ( pushover ) sendPushover(digitalRead(relayPins[0])?"Left fans ON":"Left fans OFF");
+          if (pushover) sendPushover(digitalRead(relayPins[0]) ? "Left fans ON" : "Left fans OFF");
           Serial.println("relay1 set to LOW");
-        }// verify
+        }  // verify
       }
       // Right fans ON at :30, OFF at :55
-      if(m >= 30 && m <= 55) {
-        if(digitalRead(relayPins[1]) != HIGH) {
+      if (m >= 30 && m <= 55) {
+        if (digitalRead(relayPins[1]) != HIGH) {
           digitalWrite(relayPins[1], HIGH);
-          if ( pushover ) sendPushover(digitalRead(relayPins[1])?"Left fans ON":"Left fans OFF");
+          if (pushover) sendPushover(digitalRead(relayPins[1]) ? "Left fans ON" : "Left fans OFF");
           Serial.println("relay2 set to HIGH");
         }
       }
-      if(m > 55 || m < 30) {
-        if(digitalRead(relayPins[1]) != LOW) {
+      if (m > 55 || m < 30) {
+        if (digitalRead(relayPins[1]) != LOW) {
           digitalWrite(relayPins[1], LOW);
-          if ( pushover ) sendPushover(digitalRead(relayPins[1])?"Left fans ON":"Left fans OFF");
+          if (pushover) sendPushover(digitalRead(relayPins[1]) ? "Left fans ON" : "Left fans OFF");
           Serial.println("relay1 set to LOW");
         }
       }
       lastScheduleMinute = m;
     }
   }
-  
-  //check ever minute the current vpd with target vpd, if current vpd higer than taget vpd then power on the humidifyer shelly
-  //after 11 second the shelly fro the humidifyer turns automaticly off. Configure that in the Webinterface oft the shelly.
-  static unsigned long lastVPDcheck = 0;
-  if (millis() - lastVPDcheck >= 60000) {
-    lastVPDcheck = millis();
-    int curPhase = prefs.getUInt("phase", 2);
-    String key = String("vpd_") + curPhase;
-    float targetVPD = prefs.getFloat(key.c_str(), defaultVPDs[curPhase]);
-    // current VPD already calculated as 'vpd'
-    if (lastVPD > (targetVPD)) {
-      HTTPClient http;
-      String url = String("http://") + shellyHosts[0] + "/relay/0?turn=on";
-      http.begin(url);
-      http.setAuthorization(SHELLY_USER, SHELLY_PASS);
-      http.GET(); http.end();
-      Serial.print("Humidifier ON (VPD too high");
-      if (prefs.getBool("pushover", false)) sendPushover("Humidifier ON (VPD too high).");
-    } else {
-      Serial.print("Current vpd below taget vpd. No action needed.");
-    }
-  }
-  
-  //turn on the humidifier fan if the humidifier is on else turn it off
-  String loopS = shellyAvailable[0] ? (shellyState[0] ? "ON" : "OFF") : "?";
-  if( loopS == "ON" ) {
-    if(digitalRead(relayPins[4]) != HIGH) digitalWrite(relayPins[4], HIGH);
-    Serial.print("Humidifier fan ON (humidifier is running)");
-  } else {
-    if(digitalRead(relayPins[4]) != LOW) digitalWrite(relayPins[4], LOW);
-    Serial.print("Humidifier fan OFF (humidifier is not running)");
-  }
+
+  if (prefs.getBool("pushover", false)) sendPushover("Humidifier ON (VPD too high).");
 }
+//END loop
 
 bool mqttConnect() {
   if (mqtt) {
@@ -308,9 +379,9 @@ bool mqttConnect() {
       Serial.println(mqttClient.state());
       delay(5000);
       return false;
-    } else {
-      Serial.print("MQTT disabled.");
     }
+  } else {
+    Serial.print("MQTT disabled.");
   }
 }
 
@@ -334,7 +405,7 @@ void pollShellyStatuses() {
       } else {
         shellyAvailable[i] = false;
         Serial.println("ERROR parsing JSON");
-      }      
+      }
     } else {
       shellyAvailable[i] = false;
       Serial.print(String(shellyNames[i]) + ": HTTP ");
@@ -342,12 +413,15 @@ void pollShellyStatuses() {
       Serial.println(" failed");
     }
     http.end();
+    if ( i == 0 ) {
+      if ( String(shellyState[i] ? "ON" : "OFF") == "OFF") digitalWrite(relayPins[3], LOW);
+    }
   }
 }
 
 // Serve main page
 void handleRoot() {
-  
+
   // Fetch local time
   struct tm now;
   String timeString;
@@ -361,20 +435,20 @@ void handleRoot() {
   } else {
     timeString = "Time N/A";
   }
-  
+
   // Load start date from prefs
   String startDate = prefs.getString("start_date", "");
-  struct tm tmStart = {0};
-  int d,m,y;
-  sscanf(startDate.c_str(), "%d.%d.%d", &d,&m,&y);
-  tmStart.tm_mday  = d;
-  tmStart.tm_mon   = m-1;
-  tmStart.tm_year  = y-1900;
+  struct tm tmStart = { 0 };
+  int d, m, y;
+  sscanf(startDate.c_str(), "%d.%d.%d", &d, &m, &y);
+  tmStart.tm_mday = d;
+  tmStart.tm_mon = m - 1;
+  tmStart.tm_year = y - 1900;
   time_t startEpoch = mktime(&tmStart);
-  time_t nowEpoch   = mktime(&now);
-  long diffSec      = nowEpoch - startEpoch;
-  int diffDays      = diffSec / 86400;
-  int diffWeeks     = (diffDays / 7) + 1;
+  time_t nowEpoch = mktime(&now);
+  long diffSec = nowEpoch - startEpoch;
+  int diffDays = diffSec / 86400;
+  int diffWeeks = (diffDays / 7) + 1;
 
   // Load current phase, VPD targets from prefs
   int curPhase = prefs.getUInt("phase", 1);
@@ -401,7 +475,7 @@ void handleRoot() {
   // Convert "DD.MM.YYYY" → "YYYY-MM-DD" for the date input
   String iso = "";
   if (stored.length() == 10) {
-    iso = stored.substring(6,10) + "-" + stored.substring(3,5) + "-" + stored.substring(0,2);
+    iso = stored.substring(6, 10) + "-" + stored.substring(3, 5) + "-" + stored.substring(0, 2);
   }
 
   // Build HTML
@@ -426,7 +500,8 @@ void handleRoot() {
                 "input:hover { background: #444; }"
                 ".grid-relays { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }"
                 ".status{font-weight:bold;} </style></head><body><div class='container'>"
-                "<header><div class='logo'></div><H1>Growtent Controller " + String(CONTROLLERNAME) + "</H1><H2>Elapsed: " + String(diffDays) + " days (" + String(diffWeeks) + " week)&nbsp;&nbsp;&nbsp;&nbsp;</H2><br>" + dateString + "</header>";
+                "<header><div class='logo'></div><H1>Growtent Controller "
+                + String(CONTROLLERNAME) + "</H1><H2>Elapsed: " + String(diffDays) + " days (" + String(diffWeeks) + " week)&nbsp;&nbsp;&nbsp;&nbsp;</H2><br>" + dateString + "</header>";
 
 
   // setting section
@@ -443,22 +518,22 @@ void handleRoot() {
   html += "<label>Target Temperature: <input name='set_temp' style='width: 50px;' type='number' step='0.1' min='18' max='30' value='" + String(setTemp) + "'>°C</label>";
   // setting section mqtt
   if (mqtt) {
-  html += "<label>Enable MQTT: <input type='checkbox' name='mqtt' checked></label>";
-} else {
-  html += "<label>Enable MQTT: <input type='checkbox' name='mqtt'></label>";
-}
-  html += "<label>MQTT Broker: <input name='mqtt_broker' type='password' value='"+prefs.getString("mqtt_broker","")+"'></label>";
-  html += "<label>MQTT Port: <input name='mqtt_port' type='text' value='"+prefs.getString("mqtt_port","1883")+"'></label>";
-  html += "<label>MQTT User: <input name='mqtt_user' type='password' value='"+prefs.getString("mqtt_user","")+"'></label>";
-  html += "<label>MQTT Pass: <input name='mqtt_pass' type='password' value='"+prefs.getString("mqtt_pass","")+"'></label>";
+    html += "<label>Enable MQTT: <input type='checkbox' name='mqtt' checked></label>";
+  } else {
+    html += "<label>Enable MQTT: <input type='checkbox' name='mqtt'></label>";
+  }
+  html += "<label>MQTT Broker: <input name='mqtt_broker' type='password' value='" + prefs.getString("mqtt_broker", "") + "'></label>";
+  html += "<label>MQTT Port: <input name='mqtt_port' type='text' value='" + prefs.getString("mqtt_port", "1883") + "'></label>";
+  html += "<label>MQTT User: <input name='mqtt_user' type='password' value='" + prefs.getString("mqtt_user", "") + "'></label>";
+  html += "<label>MQTT Pass: <input name='mqtt_pass' type='password' value='" + prefs.getString("mqtt_pass", "") + "'></label>";
   // setting section pushover
   if (pushover) {
-  html += "<label>Enable Pushover: <input type='checkbox' name='pushover' checked></label>";
-} else {
-  html += "<label>Enable Pushover: <input type='checkbox' name='pushover'></label>";
-}
-  html += "<label>Pushover Token: <input name='pushover_token' type='password' value='"+prefs.getString("pushover_token","")+"'></label>";
-  html += "<label>Pushover User: <input name='pushover_user' type='password' value='"+prefs.getString("pushover_user","")+"'></label>";
+    html += "<label>Enable Pushover: <input type='checkbox' name='pushover' checked></label>";
+  } else {
+    html += "<label>Enable Pushover: <input type='checkbox' name='pushover'></label>";
+  }
+  html += "<label>Pushover Token: <input name='pushover_token' type='password' value='" + prefs.getString("pushover_token", "") + "'></label>";
+  html += "<label>Pushover User: <input name='pushover_user' type='password' value='" + prefs.getString("pushover_user", "") + "'></label>";
 
   html += "<button type='submit'>Save Settings</button></form></section>";
 
@@ -484,9 +559,9 @@ void handleRoot() {
   for (int i = 0; i < NUM_RELAYS; i++) {
     bool st = digitalRead(relayPins[i]);
     html += String("<p>") + relayNames[i] + ": <span class='status'>" + (st ? "ON" : "OFF") + "</span> "
-         + "<button onclick=\"fetch('/relay?id=" + String(i + 1) + "&ajax=1')"
-         + ".then(r=>r.json()).then(j=>document.getElementById('relay-status-"
-         + String(i + 1) + "').textContent=j.state)\">Toggle</button></p>";
+            + "<button onclick=\"fetch('/relay?id=" + String(i + 1) + "&ajax=1')"
+            + ".then(r=>r.json()).then(j=>document.getElementById('relay-status-"
+            + String(i + 1) + "').textContent=j.state)\">Toggle</button></p>";
   }
 
   // Shelly devices
@@ -494,8 +569,8 @@ void handleRoot() {
   for (int i = 0; i < NUM_SHELLY; i++) {
     String s = shellyAvailable[i] ? (shellyState[i] ? "ON" : "OFF") : "?";
     html += String("<p>") + shellyNames[i] + ": <span class='status'>" + s + "</span> "
-         + "<button onclick=\"fetch('/shelly?id=" + String(i + 1) + "&state=on&ajax=1').then(r=>r.json()).then(j=>document.getElementById('shelly-status-" + String(i + 1) + "').textContent=j.state)\">ON</button>";
-    html += String("<button onclick=\"fetch('/shelly?id=") + String(i + 1) + "&state=off&ajax=1').then(r=>r.json()).then(j=>document.getElementById('shelly-status-" + String(i + 1) + "').textContent=j.state)\">OFF</button></p>";
+            + "<button onclick=\"fetch('/shelly?id=" + String(i + 1) + "&state=on&ajax=1').then(r=>r.json()).then(j=>document.getElementById('shelly-status-" + String(i + 1) + "').textContent=j.state)\">ON</button>";
+    html += String("<button onclick=\"fetch('/shelly?id=") + String(i + 1) + "&state=off&ajax=1').then(r=>r.json()).then(j=>document.getElementById('shelly-status-" + String(i + 1) + "').textContent=j.state)\">OFF</button> " + String(shellyHosts[i]) + "</p>";
   }
 
   html += "</section></body></html>";
@@ -504,35 +579,50 @@ void handleRoot() {
 
 // Handler for relay toggles
 void handleRelay() {
-  if (!server.hasArg("id")) { server.send(400); return; }
+  if (!server.hasArg("id")) {
+    server.send(400);
+    return;
+  }
   int i = server.arg("id").toInt() - 1;
-  if (i < 0 || i >= NUM_RELAYS) { server.send(400); return; }
+  if (i < 0 || i >= NUM_RELAYS) {
+    server.send(400);
+    return;
+  }
   digitalWrite(relayPins[i], digitalRead(relayPins[i]) ? LOW : HIGH);
   bool st = digitalRead(relayPins[i]);
   if (server.hasArg("ajax")) {
-    server.send(200, "application/json", String("{\"id\":") + (i+1) + ",\"state\":\"" + (st?"ON":"OFF") + "\"}");
+    server.send(200, "application/json", String("{\"id\":") + (i + 1) + ",\"state\":\"" + (st ? "ON" : "OFF") + "\"}");
   } else {
-    server.sendHeader("Location", "/"); server.send(303);
+    server.sendHeader("Location", "/");
+    server.send(303);
   }
 }
 
 // Handler for Shelly toggles
 void handleShelly() {
-  if (!server.hasArg("id") || !server.hasArg("state")) { server.send(400); return; }
+  if (!server.hasArg("id") || !server.hasArg("state")) {
+    server.send(400);
+    return;
+  }
   int i = server.arg("id").toInt() - 1;
-  if (i < 0 || i >= NUM_SHELLY) { server.send(400); return; }
+  if (i < 0 || i >= NUM_SHELLY) {
+    server.send(400);
+    return;
+  }
   String cmd = server.arg("state");
   HTTPClient http;
   String url = String("http://") + shellyHosts[i] + "/relay/0?turn=" + cmd;
   Serial.println("actioncall: " + url);
   http.begin(url);
   http.setAuthorization(SHELLY_USER, SHELLY_PASS);
-  http.GET(); http.end();
+  http.GET();
+  http.end();
   pollShellyStatuses();
   if (server.hasArg("ajax")) {
-    server.send(200, "application/json", String("{\"id\":") + (i+1) + ",\"state\":\"" + (shellyState[i]?"ON":"OFF") + "\"}");
+    server.send(200, "application/json", String("{\"id\":") + (i + 1) + ",\"state\":\"" + (shellyState[i] ? "ON" : "OFF") + "\"}");
   } else {
-    server.sendHeader("Location", "/"); server.send(303);
+    server.sendHeader("Location", "/");
+    server.send(303);
   }
 }
 
@@ -542,18 +632,24 @@ void handlePhase() {
   if (server.hasArg("startdate")) {
     // Expecting ISO format YYYY-MM-DD from HTML <input type="date">
     String iso = server.arg("startdate");
-    int y = iso.substring(0,4).toInt();
-    int m = iso.substring(5,7).toInt();
-    int d = iso.substring(8,10).toInt();
+    int y = iso.substring(0, 4).toInt();
+    int m = iso.substring(5, 7).toInt();
+    int d = iso.substring(8, 10).toInt();
     char buf[11];
     snprintf(buf, sizeof(buf), "%02d.%02d.%04d", d, m, y);
-    prefs.putString("start_date", String(buf)); // stores as "DD.MM.YYYY"
+    prefs.putString("start_date", String(buf));  // stores as "DD.MM.YYYY"
   }
 
   // 2) Save growth phase and VPD targets as befor
-  if (!server.hasArg("phase")) { server.send(400); return; }
+  if (!server.hasArg("phase")) {
+    server.send(400);
+    return;
+  }
   int ph = server.arg("phase").toInt();
-  if (ph < 1 || ph > 3) { server.send(400); return; }
+  if (ph < 1 || ph > 3) {
+    server.send(400);
+    return;
+  }
   prefs.putUInt("phase", ph);
   for (int i = 1; i <= 3; i++) {
     char key[16];
@@ -562,31 +658,69 @@ void handlePhase() {
   }
 
   // 3) Save set_temp
-  if(server.hasArg("set_temp")) prefs.putFloat("set_temp", server.arg("set_temp").toFloat());
+  if (server.hasArg("set_temp")) prefs.putFloat("set_temp", server.arg("set_temp").toFloat());
 
   // 4) Save mqtt settings
-  if(server.hasArg("mqtt")) prefs.putBool("mqtt", true);
+  if (server.hasArg("mqtt")) prefs.putBool("mqtt", true);
   else prefs.putBool("mqtt", false);
-  if(server.hasArg("mqtt_broker")){prefs.putString("mqtt_broker", server.arg("mqtt_broker")); pushoverToken = prefs.getString("mqtt_broker","");}
-  if(server.hasArg("mqtt_port")){prefs.putString("mqtt_port", server.arg("mqtt_port")); pushoverToken = prefs.getString("mqtt_port","");}
-  if(server.hasArg("mqtt_user")){prefs.putString("mqtt_user", server.arg("mqtt_user")); pushoverUserKey = prefs.getString("mqtt_user","");}
-  if(server.hasArg("mqtt_pass")){prefs.putString("mqtt_pass", server.arg("mqtt_pass")); pushoverUserKey = prefs.getString("mqtt_pass","");}
+  if (server.hasArg("mqtt_broker")) {
+    prefs.putString("mqtt_broker", server.arg("mqtt_broker"));
+    pushoverToken = prefs.getString("mqtt_broker", "");
+  }
+  if (server.hasArg("mqtt_port")) {
+    prefs.putString("mqtt_port", server.arg("mqtt_port"));
+    pushoverToken = prefs.getString("mqtt_port", "");
+  }
+  if (server.hasArg("mqtt_user")) {
+    prefs.putString("mqtt_user", server.arg("mqtt_user"));
+    pushoverUserKey = prefs.getString("mqtt_user", "");
+  }
+  if (server.hasArg("mqtt_pass")) {
+    prefs.putString("mqtt_pass", server.arg("mqtt_pass"));
+    pushoverUserKey = prefs.getString("mqtt_pass", "");
+  }
 
   // 4) Save pushover settings
-  if(server.hasArg("pushover")) prefs.putBool("pushover", true);
+  if (server.hasArg("pushover")) prefs.putBool("pushover", true);
   else prefs.putBool("pushover", false);
-  if(server.hasArg("pushover_token")){prefs.putString("pushover_token", server.arg("pushover_token")); pushoverToken = prefs.getString("pushover_token","");}
-  if(server.hasArg("pushover_user")){prefs.putString("pushover_user", server.arg("pushover_user")); pushoverUserKey = prefs.getString("pushover_user","");}
+  if (server.hasArg("pushover_token")) {
+    prefs.putString("pushover_token", server.arg("pushover_token"));
+    pushoverToken = prefs.getString("pushover_token", "");
+  }
+  if (server.hasArg("pushover_user")) {
+    prefs.putString("pushover_user", server.arg("pushover_user"));
+    pushoverUserKey = prefs.getString("pushover_user", "");
+  }
 
   // 4) Redirect back to the main page
-  server.sendHeader("Location", "/"); server.send(303);
+  server.sendHeader("Location", "/");
+  server.send(303);
 }
 
 void sendPushover(const char* message) {
   HTTPClient http;
   http.begin("https://api.pushover.net/1/messages.json");
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-  String post = "token="+pushoverToken+"&user="+pushoverUserKey+"&message="+message;
+  String post = "token=" + pushoverToken + "&user=" + pushoverUserKey + "&message=" + message;
   http.POST(post);
   http.end();
+}
+
+// Turn the plug on. Returns true on HTTP 200 OK.
+bool shellyTurnOn(const char* host) {
+  return shellyRequestDigest(host, "/relay/0?turn=on");
+}
+
+// Turn the plug off. Returns true on HTTP 200 OK.
+bool shellyTurnOff(const char* host) {
+  return shellyRequestDigest(host, "/relay/0?turn=off");
+}
+
+// Read the plug’s status JSON. Returns empty string on error.
+String shellyGetStatus(const char* host) {
+  String payload;
+  if (shellyRequestDigest(host, "/status", &payload)) {
+    return payload;
+  }
+  return String();
 }
