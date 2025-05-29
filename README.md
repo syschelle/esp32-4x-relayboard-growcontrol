@@ -60,6 +60,8 @@ A grow tent automation system using an ESP32 microcontroller, a 4x relay board, 
 - **Settings:** Adjust phase, VPD targets, temperature, MQTT, and notification settings.
 - **Relay/Shelly Control:** Toggle outputs manually or let automation rules control them.
 
+![image](https://github.com/user-attachments/assets/d3438c79-6b9c-4c23-b756-a7ed23ddbcb2)
+
 ---
 
 ## Automation Overview
