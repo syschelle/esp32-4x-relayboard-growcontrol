@@ -86,7 +86,8 @@ const float defaultSetTemp = 22.0f;
 bool mqtt = false;
 // Default pushover disabled
 bool pushover = false;
-
+// Default debug level disabled
+bool debug = false;
 
 // ====== Scheduling =====
 int lastScheduleMinute = -1;
@@ -155,22 +156,21 @@ void checkVpd() {
     digitalWrite(relayPins[3], HIGH);
     HTTPClient http;
     String url = String("http://" + String(shellyHosts[0]) + "/relay/0?turn=on");
-    Serial.println("URL: " + url);
+    if (debug) Serial.println( "URL: " + url);
     http.begin(url);
     int httpResponseCode = http.GET();
 
     if (httpResponseCode > 0) {
-      Serial.print("HTTP Response code: ");
-      Serial.println(httpResponseCode);
-      String payload = http.getString();
-      Serial.println("Response payload: " + payload);
-    } else {
-      Serial.print("Error code: ");
+      if (debug) Serial.print("HTTP Response code: ");
       if (debug) Serial.println(httpResponseCode);
+      String payload = http.getString();
+      if (debug) Serial.println("Response payload: " + payload);
+    } else {
+      if (debug) Serial.print("Error code: ");
+      if (debug) Serial.println( httpResponseCode);
       int httpResponseCode = http.GET();
       if (httpResponseCode > 0) {
-        if (debug) Serial.print("HTTP Response code: ");
-        if (debug) Serial.println(httpResponseCode);
+        if (debug) Serial.println("HTTP Response code: " + httpResponseCode);
         String payload = http.getString();
         if (debug) Serial.println("Response payload: " + payload);
       }
@@ -180,6 +180,7 @@ void checkVpd() {
   }
 }
 
+//timer setup
 Timer timers[] = {
   // vpd timer every 1 minute
   { 60000, 0, checkVpd },
@@ -205,9 +206,9 @@ void setup() {
   Serial.print("Connecting");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.print('.');
+    Serial.print(".");
   }
-  Serial.println(" connected");
+  Serial.print(" connected");
   Serial.println(WiFi.localIP());
 
   // Open preferences namespace
@@ -229,8 +230,7 @@ void setup() {
     prefs.putString("start_date", buf);
     sd = buf;
   }
-  Serial.print("Start Date: ");
-  Serial.println(sd);
+  if (debug) Serial.println("Start Date: " + sd );
 
   // MQTT if enabled
   mqtt = prefs.getBool("mqtt", false);
@@ -240,12 +240,16 @@ void setup() {
   mqttUser = prefs.getString("mqtt_user", "");
   mqttPass = prefs.getString("mqtt_pass", "");
 
+  // Debug if enabled
+  debug = prefs.getBool("debug", false);
+  // Open preferences namespace
+
+  //enable mqtt if pref variable mqtt ist true
   if (server.hasArg("mqtt")) {
     //uint16_t mqttPort = mqttPortStr.toInt();            // String → Integer
     mqttClient.setServer(mqttBroker.c_str(), mqttPort.toInt());  // String → const char*
     mqttConnect();
   }
-
 
   // Define routes
   server.on("/", HTTP_GET, handleRoot);
@@ -285,7 +289,7 @@ void loop() {
   struct tm timeinfo;
   if (getLocalTime(&timeinfo)) {
     if (timeinfo.tm_hour == 1 && timeinfo.tm_min == 0 && timeinfo.tm_mday != lastSyncDay) {
-      Serial.println("Performing daily NTP sync...");
+      if (debug) Serial.println("Performing daily NTP sync...");
       if (pushover) sendPushover("Performing daily NTP sync...");
       configTzTime(TZ_INFO, NTP_SERVER);
       lastSyncDay = timeinfo.tm_mday;
@@ -337,14 +341,14 @@ void loop() {
         if (digitalRead(relayPins[0]) != HIGH) {
           digitalWrite(relayPins[0], HIGH);
           if (pushover) sendPushover(digitalRead(relayPins[0]) ? "Left fans ON" : "Left fans OFF");
-          Serial.println("relay1 set to HIGH");
+          if (debug) Serial.println("relay1 set to HIGH");
         }  // verify
       }
       if (m > 25 || m < 5) {
         if (digitalRead(relayPins[0]) != LOW) {
           digitalWrite(relayPins[0], LOW);
           if (pushover) sendPushover(digitalRead(relayPins[0]) ? "Left fans ON" : "Left fans OFF");
-          Serial.println("relay1 set to LOW");
+          if (debug) Serial.println("relay1 set to LOW");
         }  // verify
       }
       // Right fans ON at :30, OFF at :55
@@ -352,14 +356,14 @@ void loop() {
         if (digitalRead(relayPins[1]) != HIGH) {
           digitalWrite(relayPins[1], HIGH);
           if (pushover) sendPushover(digitalRead(relayPins[1]) ? "Left fans ON" : "Left fans OFF");
-          Serial.println("relay2 set to HIGH");
+          if (debug) Serial.println("relay2 set to HIGH");
         }
       }
       if (m > 55 || m < 30) {
         if (digitalRead(relayPins[1]) != LOW) {
           digitalWrite(relayPins[1], LOW);
           if (pushover) sendPushover(digitalRead(relayPins[1]) ? "Left fans ON" : "Left fans OFF");
-          Serial.println("relay1 set to LOW");
+          if (debug) Serial.println("relay1 set to LOW");
         }
       }
       lastScheduleMinute = m;
@@ -373,15 +377,15 @@ void loop() {
 bool mqttConnect() {
   if (mqtt) {
     if (mqttClient.connect("ESP32Client", mqttBroker.c_str(), mqttPort.c_str())) {
-      Serial.println("MQTT connected");
+      if (debug) Serial.println("MQTT connected");
       return true;
-      Serial.print("MQTT connect failed, rc=");
-      Serial.println(mqttClient.state());
+      if (debug) Serial.print("MQTT connect failed, rc=");
+      if (debug) Serial.println(mqttClient.state());
       delay(5000);
       return false;
     }
   } else {
-    Serial.print("MQTT disabled.");
+    if (debug) Serial.print("MQTT disabled.");
   }
 }
 
@@ -400,21 +404,25 @@ void pollShellyStatuses() {
       if (deserializeJson(doc, payload) == DeserializationError::Ok && doc.containsKey("ison")) {
         shellyAvailable[i] = true;
         shellyState[i] = doc["ison"];
-        Serial.print("OK, " + String(shellyNames[i]) + " is ");
-        Serial.println(shellyState[i] ? "ON" : "OFF");
+        if (debug) Serial.print("OK, " + String(shellyNames[i]) + " is ");
+        if (debug) Serial.println(shellyState[i] ? "ON" : "OFF");
       } else {
         shellyAvailable[i] = false;
-        Serial.println("ERROR parsing JSON");
+        if (debug) Serial.println("ERROR parsing JSON");
       }
     } else {
       shellyAvailable[i] = false;
-      Serial.print(String(shellyNames[i]) + ": HTTP ");
-      Serial.print(code);
-      Serial.println(" failed");
+      if (debug) Serial.print(String(shellyNames[i]) + ": HTTP ");
+      if (debug) Serial.print(code);
+      if (debug) Serial.println(" failed");
     }
     http.end();
+    //if the status of the humidifier is checked and it is off, then turn off the humidifier fan
     if ( i == 0 ) {
-      if ( String(shellyState[i] ? "ON" : "OFF") == "OFF") digitalWrite(relayPins[3], LOW);
+      if ( String(shellyState[i] ? "ON" : "OFF") == "OFF") {
+        digitalWrite(relayPins[3], LOW);
+        if (debug) Serial.println(String(relayNames[3]) + "relay OFF");
+      }
     }
   }
 }
@@ -488,9 +496,9 @@ void handleRoot() {
                 "header h1 { margin: 0; font-size: 1.8rem; flex-grow: 1; color: #ff9900; }"
                 "header .logo { width: 50px; height: 50px; center/cover no-repeat; margin-right: 15px; }"
                 "section { background: #111; padding: 15px; border: 2px solid #333; border-radius: 8px; position: relative; overflow: hidden; }"
-                "section::before { content: ''; position: absolute; top: -20px; right: -20px; width: 100px; height: 100px; background: #ff9900; border-radius: 50px; opacity: 0.2; }"
                 "h2 { margin-top: 0; color: #00ffff; }"
-                "label{display:block;margin:5px 0;} input{width:80px;} button{padding:6px 12px;margin-top:10px;}"
+                "label{display:block;margin-bottom: 0.25rem;width: auto; text-align: left;justify-self: end;font-weight: bold;}" 
+                "input{width:80px;} button{padding:6px 12px;margin-top:10px;}"
                 ".status { font-weight: bold; color: #ff9900; }"
                 "button { font-family: 'Orbitron', sans-serif; background: #222; color: #00ffff; border: 1px solid #00ffff; padding: 6px 12px; cursor: pointer; text-transform: uppercase; margin-right: 8px; }"
                 "button:hover { background: #444; }"
@@ -499,14 +507,25 @@ void handleRoot() {
                 "input { font-family: 'Orbitron', sans-serif; background: #222; color: #00ffff; border: 1px solid #00ffff; padding: 6px 12px; cursor: pointer; text-transform: uppercase; margin-right: 8px; }"
                 "input:hover { background: #444; }"
                 ".grid-relays { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }"
-                ".status{font-weight:bold;} </style></head><body><div class='container'>"
+                ".card { background: #222; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.5); padding: 1rem; margin-bottom: 1rem;}"
+                ".card h3 { margin-top: 0; color: #00ffff; }"
+                ".status{font-weight:bold;} </style>"
+                "</head><body><div class='container'>"
                 "<header><div class='logo'></div><H1>Growtent Controller "
                 + String(CONTROLLERNAME) + "</H1><H2>Elapsed: " + String(diffDays) + " days (" + String(diffWeeks) + " week)&nbsp;&nbsp;&nbsp;&nbsp;</H2><br>" + dateString + "</header>";
 
 
   // setting section
-  html += "<section id='phases'><h2>Settings</h2><form action='/phase' method='post'>";
-  html += "<label>Start Date: <input name='startdate' style='width: 120px;' type='date' value='" + iso + "'></label>";
+  html +="<table><tr style='vertical-align:top'><td>";
+  html +="<section id='phases'><h2>Settings</h2><form action='/phase' method='post'>";
+  html +="<table><tr style='vertical-align:top'><td>";
+  html +="<div class='card'><h3>Set start date</h3>";
+  html += "<label>Start Date: <input name='startdate' style='width: 120px;' type='date' value='" + iso + "'></label></div>";
+  // setting section temperature
+  html +="<div class='card'><h3>Set target temerature</h3>";
+  html += "<label>Target Temperature: <input name='set_temp' style='width: 50px;' type='number' step='0.1' min='18' max='30' value='" + String(setTemp) + "'>°C</label></div>";
+  // setting section growphase and temperature
+  html +="<div class='card'><h3>Set growphase and vpd</h3>";
   html += "<label>Current Phase: <select name='phase'>";
   for (int i = 1; i <= 3; i++) {
     html += String("<option value='") + i + "'" + (i == curPhase ? " selected" : "") + ">" + phaseNames[i] + "</option>";
@@ -515,8 +534,10 @@ void handleRoot() {
   for (int i = 1; i <= 3; i++) {
     html += String("<label>") + phaseNames[i] + " VPD: <input name='vpd_" + String(i) + "' type='number' style='width: 50px;' step='0.01' value='" + String(vpdTargets[i], 2) + "'>kPa</label>";
   }
-  html += "<label>Target Temperature: <input name='set_temp' style='width: 50px;' type='number' step='0.1' min='18' max='30' value='" + String(setTemp) + "'>°C</label>";
+  html +="</div>";
+  html +="</td><td>";
   // setting section mqtt
+  html +="<div class='card'><h3>Set MQTT</h3>";
   if (mqtt) {
     html += "<label>Enable MQTT: <input type='checkbox' name='mqtt' checked></label>";
   } else {
@@ -525,24 +546,27 @@ void handleRoot() {
   html += "<label>MQTT Broker: <input name='mqtt_broker' type='password' value='" + prefs.getString("mqtt_broker", "") + "'></label>";
   html += "<label>MQTT Port: <input name='mqtt_port' type='text' value='" + prefs.getString("mqtt_port", "1883") + "'></label>";
   html += "<label>MQTT User: <input name='mqtt_user' type='password' value='" + prefs.getString("mqtt_user", "") + "'></label>";
-  html += "<label>MQTT Pass: <input name='mqtt_pass' type='password' value='" + prefs.getString("mqtt_pass", "") + "'></label>";
+  html += "<label>MQTT Pass: <input name='mqtt_pass' type='password' value='" + prefs.getString("mqtt_pass", "") + "'></label></div>";
   // setting section pushover
+  html +="<div class='card'><h3>Set pushover</h3>";
   if (pushover) {
     html += "<label>Enable Pushover: <input type='checkbox' name='pushover' checked></label>";
   } else {
     html += "<label>Enable Pushover: <input type='checkbox' name='pushover'></label>";
   }
   html += "<label>Pushover Token: <input name='pushover_token' type='password' value='" + prefs.getString("pushover_token", "") + "'></label>";
-  html += "<label>Pushover User: <input name='pushover_user' type='password' value='" + prefs.getString("pushover_user", "") + "'></label>";
-
-  html += "<button type='submit'>Save Settings</button></form></section>";
-
-  // VPD guidelines
-  html += "<section id='phases'><div><h2>Guideline</h2>";
-  html += "<p style='color:green;'>Seedling/Clone<br><b>VPD:</b> 0.2 – 0.8 kPa<br><b>Light:</b> 100 – 300 μmol/m2.s # 20 mol/m²/day # 100 - 200 PPFD<br><b>Temperature Day:</b> 20–25 °C<br><b>Temperature Night:</b> constant, not below 20 °C</p>";
-  html += "<p style='color:orange;'>Vegetative<br><b>VPD:</b> 0.8 – 1.4 kPa<br><b>Light:</b> 400 – 600 μmol/m2.s # 30-40 mol/m²/day # 400 - 600 PPFD<br><b>Temperature Day:</b> 22–28 °C (range 20°C - 30°C)<br><b>Temperature Night:</b> approximately 2–4 °C cooler (20°C – 24°C)</p>";
-  html += "<p style='color:red;'>Flowering<br><b>VPD:</b> 1.2 – 1.5 kPa<br><b>Light:</b> 700 – 1.000 μmol/m2.s # 40-50 mol/m²/day # 800 - 1000 PPFD<br><b>Temperature Day:</b> 20–26 °C (last 2 weeks 19°C - 24°C)<br><b>Temperature Night:</b> approximately 2–10 °C cooler (16°C – 21°C)</p></section>";
-
+  html += "<label>Pushover User: <input name='pushover_user' type='password' value='" + prefs.getString("pushover_user", "") + "'></label></div>";
+  html +="</td><td>";
+  // setting section debug
+    html +="<div class='card'><h3>Set debugging</h3>";
+  if (debug) {
+    html += "<label>Enable Debuglevel: <input type='checkbox' name='debug' checked></label></div>";
+  } else {
+    html += "<label>Enable Debuglevel: <input type='checkbox' name='debug'></label></div>";
+  }
+  html +="</td><tr></table>";
+  html += "<button type='submit'>Save Settings</button></form><div class='form-actions'><button id='rebootBtn' type='button' type='button' onclick=\"window.location.href='/reboot'\">Reboot Controller</button></div></section>";
+  html +="</td><td>";
   // Sensor readings
   html += "<section id='sensor'><h2>Sensor</h2>";
   if (!bmeAvailable) html += "<p style='color:red;'>Sensor not connected</p></section>";
@@ -563,7 +587,7 @@ void handleRoot() {
             + ".then(r=>r.json()).then(j=>document.getElementById('relay-status-"
             + String(i + 1) + "').textContent=j.state)\">Toggle</button></p>";
   }
-
+  html +="</td><td>";
   // Shelly devices
   html += "</section><section id='shelly'><h2>Shelly Devices</h2>";
   for (int i = 0; i < NUM_SHELLY; i++) {
@@ -573,7 +597,16 @@ void handleRoot() {
     html += String("<button onclick=\"fetch('/shelly?id=") + String(i + 1) + "&state=off&ajax=1').then(r=>r.json()).then(j=>document.getElementById('shelly-status-" + String(i + 1) + "').textContent=j.state)\">OFF</button> " + String(shellyHosts[i]) + "</p>";
   }
 
-  html += "</section></body></html>";
+  html += "</section>";
+  html +="</td><tr></table>";
+
+  // VPD guidelines
+  html += "<section id='phases'><div><h2>Guideline</h2>";
+  html += "<p style='color:green;'>Seedling/Clone<br><b>VPD:</b> 0.2 – 0.8 kPa<br><b>Light:</b> 100 – 300 μmol/m2.s # 20 mol/m²/day # 100 - 200 PPFD<br><b>Temperature Day:</b> 20–25 °C<br><b>Temperature Night:</b> constant, not below 20 °C</p>";
+  html += "<p style='color:orange;'>Vegetative<br><b>VPD:</b> 0.8 – 1.4 kPa<br><b>Light:</b> 400 – 600 μmol/m2.s # 30-40 mol/m²/day # 400 - 600 PPFD<br><b>Temperature Day:</b> 22–28 °C (range 20°C - 30°C)<br><b>Temperature Night:</b> approximately 2–4 °C cooler (20°C – 24°C)</p>";
+  html += "<p style='color:red;'>Flowering<br><b>VPD:</b> 1.2 – 1.5 kPa<br><b>Light:</b> 700 – 1.000 μmol/m2.s # 40-50 mol/m²/day # 800 - 1000 PPFD<br><b>Temperature Day:</b> 20–26 °C (last 2 weeks 19°C - 24°C)<br><b>Temperature Night:</b> approximately 2–10 °C cooler (16°C – 21°C)</p></section>";
+
+  html += "</body></html>";
   server.send(200, "text/html", html);
 }
 
@@ -612,7 +645,7 @@ void handleShelly() {
   String cmd = server.arg("state");
   HTTPClient http;
   String url = String("http://") + shellyHosts[i] + "/relay/0?turn=" + cmd;
-  Serial.println("actioncall: " + url);
+  if (debug) Serial.println("actioncall: " + url);
   http.begin(url);
   http.setAuthorization(SHELLY_USER, SHELLY_PASS);
   http.GET();
@@ -692,9 +725,14 @@ void handlePhase() {
     pushoverUserKey = prefs.getString("pushover_user", "");
   }
 
-  // 4) Redirect back to the main page
+  if (server.hasArg("debug")) prefs.putBool("debug", true);
+  else prefs.putBool("debug", false);
+
+  // 6) Redirect back to the main page
   server.sendHeader("Location", "/");
   server.send(303);
+
+  Serial.print("Pref updated.");
 }
 
 void sendPushover(const char* message) {
