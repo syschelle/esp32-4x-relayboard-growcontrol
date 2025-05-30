@@ -9,6 +9,7 @@
 #include <WebServer.h>
 #include <Adafruit_BME280.h>
 #include <HTTPClient.h>
+#include <esp_http_client.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <math.h>
