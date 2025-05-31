@@ -202,6 +202,8 @@ void setup() {
   bmeAvailable = bme.begin(BME_ADDR);
   Serial.println(bmeAvailable ? "BME280 initialized" : "BME280 not found");
 
+  
+
   // Connect to Wi-Fi
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   Serial.print("Connecting");
@@ -263,6 +265,34 @@ void setup() {
     ESP.restart();
   });
 
+  // ===============================
+  // route for pure sensor data. for update on the fly in the web page.
+  // ===============================
+  server.on("/sensordata", HTTP_GET, []() {
+    // JSON building: { "temperature": 21.5, "humidity": 45.3, "vpd": 1.23 }
+    DynamicJsonDocument doc(128);
+
+    if (bmeAvailable) {
+      float t = bme.readTemperature();
+      float h = bme.readHumidity();
+      float svp = 0.6108f * exp((17.27f * t) / (t + 237.3f));
+      float vpd = svp - (h / 100.0f) * svp;
+
+      doc["temperature"] = t;
+      doc["humidity"]    = h;
+      doc["vpd"]         = vpd;
+    } else {
+      doc["temperature"] = nullptr;
+      doc["humidity"]    = nullptr;
+      doc["vpd"]         = nullptr;
+    }
+
+    String payload;
+    serializeJson(doc, payload);
+
+    server.send(200, "application/json", payload);
+  });
+  
   // Start server
   server.begin();
   Serial.println("Web server started");
@@ -501,6 +531,7 @@ void handleRoot() {
                 "label{display:block;margin-bottom: 0.25rem;width: auto; text-align: left;justify-self: end;font-weight: bold;}" 
                 "input{width:80px;} button{padding:6px 12px;margin-top:10px;}"
                 ".status { font-weight: bold; color: #ff9900; }"
+                ".value { font-weight: bold; color: #ff9900; }"
                 "button { font-family: 'Orbitron', sans-serif; background: #222; color: #00ffff; border: 1px solid #00ffff; padding: 6px 12px; cursor: pointer; text-transform: uppercase; margin-right: 8px; }"
                 "button:hover { background: #444; }"
                 "select { font-family: 'Orbitron', sans-serif; background: #222; color: #00ffff; border: 1px solid #00ffff; padding: 6px 12px; cursor: pointer; text-transform: uppercase; margin-right: 8px; }"
@@ -513,7 +544,7 @@ void handleRoot() {
                 ".status{font-weight:bold;} </style>"
                 "</head><body><div class='container'>"
                 "<header><div class='logo'></div><H1>Growtent Controller "
-                + String(CONTROLLERNAME) + "</H1><H2>Elapsed: " + String(diffDays) + " days (" + String(diffWeeks) + " week)&nbsp;&nbsp;&nbsp;&nbsp;</H2><br>" + dateString + "</header>";
+                + String(CONTROLLERNAME) + "</H1><H2>Elapsed: " + String(diffDays) + " days ( " + String(diffWeeks) + "th week )&nbsp;&nbsp;&nbsp;&nbsp;</H2><br>" + dateString + "</header>";
 
 
   // setting section
@@ -526,7 +557,7 @@ void handleRoot() {
   html +="<div class='card'><h3>Set target temerature</h3>";
   html += "<label>Target Temperature: <input name='set_temp' style='width: 50px;' type='number' step='0.1' min='18' max='30' value='" + String(setTemp) + "'>°C</label></div>";
   // setting section growphase and temperature
-  html +="<div class='card'><h3>Set growphase and vpd</h3>";
+  html +="<div class='card'><h3>Set growphase and vpd values</h3>";
   html += "<label>Current Phase: <select name='phase'>";
   for (int i = 1; i <= 3; i++) {
     html += String("<option value='") + i + "'" + (i == curPhase ? " selected" : "") + ">" + phaseNames[i] + "</option>";
@@ -569,14 +600,25 @@ void handleRoot() {
   html += "<button type='submit'>Save Settings</button></form><div class='form-actions'><button id='rebootBtn' type='button' type='button' onclick=\"window.location.href='/reboot'\">Reboot Controller</button></div></section>";
   html +="</td><td>";
   // Sensor readings
-  html += "<section id='sensor'><h2>Sensor</h2>";
+  html += "<section id='sensor'><h2>Sensor data</h2>";
   if (!bmeAvailable) html += "<p style='color:red;'>Sensor not connected</p></section>";
   else {
-    html += String("<p>Current Temperature: <span class='status'>") + String(temperature, 1) + " °C</span></p>";
-    html += String("<p>Target Temperature: <span class='status'>") + String(setTemp, 1) + " °C</span></p>";
-    html += String("<p>Humidity: <span class='status'>") + String(humidity, 1) + " %</span></p>";
-    html += String("<p>Current VPD: <span class='status'>") + String(currentVPD, 2) + " kPa</span></p>";
-    html += String("<p>Target VPD: <span class='status'>") + String(vpdTargets[curPhase], 2) + " kPa</span></p></section>";
+    html += "<div class='sensor-grid'>";
+    //sensor current temerature
+    html += "<div class='label'>Current Temperature: </div>";
+    html += "<div class='value'><span id='tempSpan'>" + String(temperature, 1) + "</span> °C</div><br>";
+    // target temperature
+    html += "<div class='label'>Target Temperature: </div>";
+    html += "<div><span class='status'>" + String(setTemp, 1) + " °C</span></div><br>";
+    //sensor current humidity
+    html += "<div class='label'>Humidity: </div>";
+    html += "<div class='value'><span id='humSpan'>" + String(humidity, 1) + "</span> %</div><br>";
+    //sensor current vpd
+    html += "<div class='label'>Current VPD:  </div>";
+    html += "<div class='value'><span id='vpdSpan'>" + String(currentVPD, 2) + "</span> kPa</div><br>";
+    // target vpd
+    html += "<div class='label'>Target VPD:  </div>";
+    html += "<span class='status'>" + String(vpdTargets[curPhase], 2) + " kPa</span></div></section>";
   }
 
   // Relays
@@ -606,6 +648,42 @@ void handleRoot() {
   html += "<p style='color:green;'>Seedling/Clone<br><b>VPD:</b> 0.2 – 0.8 kPa<br><b>Light:</b> 100 – 300 μmol/m2.s # 20 mol/m²/day # 100 - 200 PPFD<br><b>Temperature Day:</b> 20–25 °C<br><b>Temperature Night:</b> constant, not below 20 °C</p>";
   html += "<p style='color:orange;'>Vegetative<br><b>VPD:</b> 0.8 – 1.4 kPa<br><b>Light:</b> 400 – 600 μmol/m2.s # 30-40 mol/m²/day # 400 - 600 PPFD<br><b>Temperature Day:</b> 22–28 °C (range 20°C - 30°C)<br><b>Temperature Night:</b> approximately 2–4 °C cooler (20°C – 24°C)</p>";
   html += "<p style='color:red;'>Flowering<br><b>VPD:</b> 1.2 – 1.5 kPa<br><b>Light:</b> 700 – 1.000 μmol/m2.s # 40-50 mol/m²/day # 800 - 1000 PPFD<br><b>Temperature Day:</b> 20–26 °C (last 2 weeks 19°C - 24°C)<br><b>Temperature Night:</b> approximately 2–10 °C cooler (16°C – 21°C)</p></section>";
+
+  html += R"rawliteral(              
+<script>
+// function, load JSON from /sensordata
+  async function updateSensorValues() {
+    try {
+     const response = await fetch('/sensordata');
+     if (!response.ok) {
+       console.error('Fehler beim Abrufen der Sensordaten:', response.status);
+         return;
+     }
+     const data = await response.json();
+     // Wenn sensor nicht verfügbar, evtl. auf "N/A" setzen
+     if (data.temperature !== null) {
+       document.getElementById('tempSpan').textContent = data.temperature.toFixed(1);
+       document.getElementById('humSpan').textContent  = data.humidity.toFixed(1);
+       document.getElementById('vpdSpan').textContent  = data.vpd.toFixed(2);
+       // Ziel-VPD eventuell neu aus Prefs holen? Alternativ: statisch beibehalten
+       // document.getElementById('vpdTargetSpan').textContent = data.vpdTarget.toFixed(2);
+     } else {
+       document.getElementById('tempSpan').textContent = 'N/A';
+       document.getElementById('humSpan').textContent  = 'N/A';
+       document.getElementById('vpdSpan').textContent  = 'N/A';
+     }
+   } catch (error) {
+     console.error('Exception beim updateSensorValues():', error);
+  }
+ }
+
+  // 2) Alle X Sekunden neu abrufen (z. B. alle 10 Sekunden)
+  setInterval(updateSensorValues, 10000); // 10000 ms = 10 Sekunden
+
+  // 3) Direkt beim Laden einmal aufrufen, damit beim Open schon frische Werte stehen
+  window.addEventListener('load', updateSensorValues);
+ </script>
+)rawliteral";
 
   html += "</body></html>";
   server.send(200, "text/html", html);
