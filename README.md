@@ -8,15 +8,20 @@ A grow tent automation system using an ESP32 microcontroller, a 4x relay board, 
 
 ## Features
 
-- **4-Relay Control:** Independently operate fans and humidifier via relays.
-- **BME280 Sensor Integration:** Read temperature, humidity, and calculate VPD.
-- **Shelly Smart Plug Support:** Control Shelly Plug S Plus devices for additional automation (e.g., humidifier).
-- **Growth Phase Profiles:** Set and persist VPD targets and temperature per plant development phase (Seedling/Clone, Vegetative, Flowering).
-- **Scheduling:** Timed fan automation based on NTP time and custom intervals.
-- **MQTT Integration:** Publish sensor data to your MQTT broker.
-- **Web Interface:** Configure setpoints, phases, relays, and Shelly devices from a browser.
-- **Pushover Notifications:** Optional alerts for significant actions (e.g., relay changes, NTP sync).
-- **Wi-Fi Configuration:** Connects to your Wi-Fi for remote access and MQTT.
+**4-Controls up to 4 relays (fans, humidifier fan, etc.) via ESP32 GPIOs
+**4-Integrates with up to 5 Shelly Plug S Plus smart plugs (e.g. for humidifier, heater, lights, fans)
+**4-Reads temperature, humidity, and calculates VPD using a BME280 sensor (I2C)
+**4-Growth phase management: persists and recalls VPD targets and temperature setpoints for Seedling/Clone, Vegetative, and Flowering phases
+**4-Schedules relays (fans) based on precise NTP time and custom intervals
+**4-MQTT support: publishes sensor data (temperature, humidity, VPD) to a broker and allows for remote automation
+**4-Web interface for real-time monitoring (sensor data, relay and Shelly states), configuration of setpoints, growth phase, VPDs, relays, Shelly devices, Wi-Fi, MQTT, and notifications
+**4-Pushover notification support for status and critical events (relay changes, NTP sync, etc.)
+**4-Wi-Fi configuration and automatic reconnection support
+**4-Persistent storage of settings (phase, VPD targets, temperature, MQTT/Pushover settings, debug level, growlight schedule)
+**4-Automated growlight scheduling (start/end time, duration)
+**4-Daily NTP resync for reliable scheduling
+**4-Debug logging toggle via web interface
+**4-REST API endpoints for relay/shelly toggling and real-time JSON sensor updates
 
 ---
 
