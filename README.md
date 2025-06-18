@@ -61,13 +61,10 @@ A grow tent automation system using an ESP32 microcontroller, a 4x relay board, 
 ---
 
 ## Web Interface
-![image](https://github.com/user-attachments/assets/f112f67d-5421-4e8e-966d-f7e45109bd0f)
-![image](https://github.com/user-attachments/assets/ff7966bc-1dd3-4a5f-bd64-5aa80d7d0832)
-![image](https://github.com/user-attachments/assets/a848e2dd-1cf1-4fa3-81d0-f25396b8fdfc)
-![image](https://github.com/user-attachments/assets/437fa668-f5fa-4e4a-a063-8751513ae7b1)
-
-
-
+![image](https://github.com/user-attachments/assets/ee7d9c03-dd2c-4b54-b0f9-e6c173ce19b9)
+![image](https://github.com/user-attachments/assets/1b2c297b-051c-43eb-8359-dd73fff9eb8e)
+![image](https://github.com/user-attachments/assets/72208b4a-f010-4413-a721-9a5719a770bb)
+![image](https://github.com/user-attachments/assets/dfc18dc3-c8b1-46a8-8bd8-dfe12058508d)
 
 - **Main Page:** Displays live temperature, humidity, VPD, and relay/shelly statuses.
 - **Settings:** Adjust phase, VPD targets, temperature, MQTT, and notification settings.
