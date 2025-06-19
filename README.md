@@ -116,6 +116,18 @@ Pull requests and feature suggestions are welcome!
 
 ## Credits
 
-- Built with the Arduino ESP32 core, Adafruit BME280 library, and PubSubClient for MQTT.
-- Inspired by the needs of home growers.
-- chatgpt.com
+- This project uses the following libraries:\
+  [Arduino core](https://www.arduino.cc/)\
+  [Wire](https://www.arduino.cc/en/Reference/Wire)\
+  [WiFi](https://www.arduino.cc/en/Reference/WiFi)\
+  [WebServer (ESP32)](https://github.com/espressif/arduino-esp32/tree/master/libraries/WebServer)\
+  [Adafruit BME280](https://github.com/adafruit/Adafruit_BME280_Library)\
+  [HTTPClient](https://github.com/espressif/arduino-esp32/tree/master/libraries/HTTPClient)\
+  [ESP HTTP Client](https://github.com/espressif/arduino-esp32/tree/master/libraries/ESP32/examples/HTTPClient)\
+  [ArduinoJson](https://arduinojson.org/)\
+  [Preferences (ESP32)](https://github.com/espressif/arduino-esp32/tree/master/libraries/Preferences)\
+  [PubSubClient](https://github.com/knolleary/pubsubclient)\
+  [NewPing](https://bitbucket.org/teckel12/arduino-new-ping/)\
+  [math.h](https://en.cppreference.com/w/c/numeric/math)
+  
+  Inspired by the needs of meself and chatgpt.com
