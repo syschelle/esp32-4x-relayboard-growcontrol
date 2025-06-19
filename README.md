@@ -27,24 +27,17 @@ A grow tent automation system using an ESP32 microcontroller, a 4x relay board, 
 
 ## Hardware Required
 
-- ESP32 4-channel relay module
+### ESP32 4-channel relay module<br /><br />
   ![image](https://github.com/user-attachments/assets/a5d5d21a-6a74-4c8f-a11c-5d51f332e5ea)
 
-- BME280 sensor (I2C)
-  PIN  = GPIO 3V3
-  GND  = GPIO GND
-  SCL  = GPIO 22
-  SDA  = GPIO 21
+### BME280 sensor (I2C)<br />
   ![BME280](https://github.com/user-attachments/assets/a87e921b-b051-4730-a849-2845959ca554)
     
-- (Optional) HC-SR04 ultra sound sensor for Blumat® and Autopod®-Tank watering system.
-  VCC  = GPIO 5V
-  GND  = GPIO GND
-  TRIG = GPIO 16
-  ECHO = GPIO 17
-  
-- Shelly Plug S Plus smart plugs
-- Power supply, wiring, and target devices (fans, humidifier, etc.)
+### (Optional) HC-SR04 ultra sound sensor for Blumat® and Autopod®-Tank watering system.<br />
+ 
+### Shelly Plug S Plus smart plugs
+### Power supply
+### wiring, and target devices (fans, humidifier, etc.)
 
 ---
 
@@ -53,7 +46,8 @@ A grow tent automation system using an ESP32 microcontroller, a 4x relay board, 
 ### 1. Wiring
 
 - Connect the relay module to the ESP32 (default pins: 32, 33, 25, 26).
-- Connect the BME280 sensor to the ESP32 I2C bus (default address: 0x76).
+- Connect the BME280 sensor to the ESP32 I2C bus (default address: 0x76)(VCC = GPIO 3V3, GND = GND, SCL = GPIO 22, SDA = GPIO 21).
+- (Optional) Connect the HC-SR04 (VCC = 5V, GND = GND, TRIG = GPIO 16, ECHO = GPIO 17.
 - Wire relay outputs to fans, humidifier, etc.
 
 ### 2. Flashing
