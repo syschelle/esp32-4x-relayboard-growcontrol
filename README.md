@@ -27,10 +27,22 @@ A grow tent automation system using an ESP32 microcontroller, a 4x relay board, 
 
 ## Hardware Required
 
-- ESP32 development board
-- 4-channel relay module
+- ESP32 4-channel relay module
+  ![image](https://github.com/user-attachments/assets/a5d5d21a-6a74-4c8f-a11c-5d51f332e5ea)
+
 - BME280 sensor (I2C)
+  PIN  = GPIO 3V3
+  GND  = GPIO GND
+  SCL  = GPIO 22
+  SDA  = GPIO 21
+  ![BME280](https://github.com/user-attachments/assets/a87e921b-b051-4730-a849-2845959ca554)
+    
 - (Optional) HC-SR04 ultra sound sensor for Blumat® and Autopod®-Tank watering system.
+  VCC  = GPIO 5V
+  GND  = GPIO GND
+  TRIG = GPIO 16
+  ECHO = GPIO 17
+  
 - Shelly Plug S Plus smart plugs
 - Power supply, wiring, and target devices (fans, humidifier, etc.)
 
