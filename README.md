@@ -45,7 +45,7 @@ A grow tent automation system using an ESP32 microcontroller, a 4x relay board, 
 
 ### 1. Wiring
 
-- Connect the relay module to the ESP32 (default pins: 32, 33, 25, 26).
+- The relay module is connected to the ESP32 (default pins: 32, 33, 25, 26).
 - Connect the BME280 sensor to the ESP32 I2C bus (default address: 0x76)(VCC = GPIO 3V3, GND = GND, SCL = GPIO 22, SDA = GPIO 21).
 - (Optional) Connect the HC-SR04 (VCC = 5V, GND = GND, TRIG = GPIO 16, ECHO = GPIO 17.
 - Wire relay outputs to fans, humidifier, etc.
