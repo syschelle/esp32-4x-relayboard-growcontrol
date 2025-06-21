@@ -1,3 +1,7 @@
+// ====== Wi-Fi Configuration ======
+const char* WIFI_SSID = "ssid";
+const char* WIFI_PASS = "pwd";
+
 // ====== MQTT placeholder variable ======
 String mqtt_Broker;  // loaded from prefs
 String mqtt_Port;    // loaded from prefs
@@ -11,7 +15,7 @@ PubSubClient mqttClient(wifiClient);
 
 // ====== Pushover placeholder variable ======
 String pushoverToken;    // loaded from prefs
-String pushoverUserKey;  // loaded from prefs
+String pushoverUserKey;  // loaded from prefsControllerName
 
 // ====== Last published sensor values ======
 #include <cmath>
@@ -19,7 +23,7 @@ float lastTemperature = NAN;
 float lastHumidity = NAN;
 float lastVPD = NAN;
 
-const char* CONTROLLERNAME = "Spiderfarmer";  // choose the name of your controller
+String ControllerName;  // choose the name of your controller
 
 // ====== Shelly Plug S Plus Configuration ======
 #define NUM_SHELLY 5
@@ -82,6 +86,7 @@ bool flowering = false;
 //date and tme
 struct tm now;
 // Default growlight setting
+char actualDate[10];
 String startDate;
 String startFlowering;
 const char* DEFAULT_LIGHT_START = "03:00";
