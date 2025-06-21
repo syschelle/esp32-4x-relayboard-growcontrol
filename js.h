@@ -8,32 +8,44 @@ async function updateSensorValues() {
   try {
    const response = await fetch('/sensordata');
    if (!response.ok) {
-     console.error('Fehler beim Abrufen der Sensordaten:', response.status);
+     console.error('Error retrieving sensor data:', response.status);
        return;
    }
    const data = await response.json();
-   // Wenn sensor nicht verfügbar, evtl. auf "N/A" setzen
+   // If the sensor is not available, possibly set to 'N/A'.
    if (data.temperature !== null) {
      document.getElementById('tempSpan').textContent = data.temperature.toFixed(1);
      document.getElementById('humSpan').textContent  = data.humidity.toFixed(1);
      document.getElementById('vpdSpan').textContent  = data.vpd.toFixed(2);
-     // Ziel-VPD eventuell neu aus Prefs holen? Alternativ: statisch beibehalten
+     // Should the target VPD potentially be retrieved again from Prefs? Alternatively: keep it static.
      // document.getElementById('vpdTargetSpan').textContent = data.vpdTarget.toFixed(2);
+     
+     // blinkElement after update 
+     blinkElement('tempSpan');
+     blinkElement('humSpan');
+     blinkElement('vpdSpan');
+
    } else {
      document.getElementById('tempSpan').textContent = 'N/A';
      document.getElementById('humSpan').textContent  = 'N/A';
      document.getElementById('vpdSpan').textContent  = 'N/A';
    }
  } catch (error) {
-   console.error('Exception beim updateSensorValues():', error);
+   console.error('Exception in updateSensorValues():', error);
  }
 }
 
 //Retrieve again every X seconds (e.g. every 10 seconds)
-setInterval(updateSensorValues, 10000); // 10000 ms = 10 Sekunden
+setInterval(updateSensorValues, 10000); // 10000 ms = 10 seconds
 
 //Call it directly when loading, so that fresh values are already present when opening.
 window.addEventListener('load', updateSensorValues);
+
+function blinkElement(id) {
+  const el = document.getElementById(id);
+  el.classList.add('blink-text');
+  setTimeout(() => el.classList.remove('blink-text'), 500);
+}
 
 //stausmessage section
 
@@ -82,10 +94,6 @@ document.getElementById('nav-diary').addEventListener('click', e => {
 document.getElementById('nav-guide').addEventListener('click', e => {
   e.preventDefault();
   loadSection('/guide');
-});
-document.getElementById('nav-manual').addEventListener('click', e => {
-  e.preventDefault();
-  loadSection('/manual');
 });
 
 // initial view
