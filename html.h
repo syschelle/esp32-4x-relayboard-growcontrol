@@ -1,11 +1,5 @@
 const char HTML_HEADER[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
-<html class='dark'>
-<head>
-  <meta charset='UTF-8' />
-  <meta name='viewport' content='width=device-width, initial-scale=1.0' />
-  <title>esp grow control</title>
-<!DOCTYPE html>
+<!DOCTYPE html lang="de">
 <html class='dark'>
 <head>
   <meta charset='UTF-8' />
@@ -91,6 +85,7 @@ const char HTML_HEADER[] PROGMEM = R"rawliteral(
 
     nav a:hover {
       text-decoration: underline;
+      text-color: underline;
     }
 
     body {
@@ -103,13 +98,34 @@ const char HTML_HEADER[] PROGMEM = R"rawliteral(
       text-align: center;
       color: var(--link-color);
     }
+
+    h3 {
+      text-align: center;
+      color: var(--link-color);
+      text-decoration: underline;
+    }
     
+    .blink-text {
+    animation: text-blink 0.5s ease;
+    }
+
+    @keyframes text-blink {
+      from { color: #ff9900; }
+      to   { color: inherit; }
+    }
+
+    .logo {
+      font-size: 30px;
+      color: #ff9900;
+    }
+
     .grid-1x1 {
       display: grid;
       justify-content: center;
-      grid-template-columns: 1fr;
-      margin-top: 5px;
+      grid-template-columns: repeat(1, 1fr);
+      gap: 15px;
       max-width: var(--grid-with);
+      margin: auto;
       align-items: center;
     }
     
@@ -172,11 +188,58 @@ const char HTML_HEADER[] PROGMEM = R"rawliteral(
       margin: auto;
       align-items: center;
     }
+
+    .grid-1x5 {
+      display: grid;
+      justify-content: center;
+      grid-template-columns: repeat(1, 5fr);
+      gap: 15px;
+      max-width: var(--grid-with);
+      margin: auto;
+      align-items: center;
+    }
     
+    .grid-settings {
+      display: grid;
+      justify-content: center;
+      grid-template-columns: repeat(1, 5fr);
+      gap: 15px;
+      max-width: 400;
+      margin: auto;
+      align-items: right;
+    }
+
     .tile {
       background-color: var(--header-bg);
       padding: 20px;
       text-align: center;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      font-size: 1.1em;
+    }
+
+    .tile-left {
+      background-color: var(--header-bg);
+      padding: 20px;
+      text-align: left;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      font-size: 1.1em;
+    }
+
+    .tile-right {
+      background-color: var(--header-bg);
+      padding: 20px;
+      text-align: right;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      font-size: 1.1em;
+    }
+
+    .tile-right-settings {
+      background-color: var(--header-bg);
+      padding: 20px;
+      text-align: right;
       border-radius: 12px;
       box-shadow: 0 4px 6px rgba(0,0,0,0.1);
       font-size: 1.1em;
@@ -204,7 +267,7 @@ const char HTML_HEADER[] PROGMEM = R"rawliteral(
       font-family: sans-serif;
       padding: 0.5rem;
       margin: 0.5rem 0;
-      background: #1e1e1e;
+      background: var(--bg);
       color: #f0f0f0;
       border: 1px solid #444;
       border-radius: 6px;
@@ -218,33 +281,33 @@ const char HTML_HEADER[] PROGMEM = R"rawliteral(
     <div class='header-grid'>
       <div class='logo'>%CONTROLLERNAME%</div>
       <div class='center-text'>
-        <div class='title' style='color:#ff9900;'>%ELAPSEDGROW%</div>
+        <div class='title' style='color:#ff9900;'>%ELAPSEDGROW% current phase: %CURRPHAES%</div>
         <div class='title' style='color:#D20103;'>%ELAPSEDFLOWERING%</div>
       </div>
       <div class='right-align' id='datum'></div>
     </div>
 
     <div class='statusMsg'>
-	<!-- Status updates are written here. -->
-	
+	    <!-- Status updates are written here. -->
     </div>
 
     <nav>
-      <a href='#' id='nav-status'>📋</a>
-      <a href='#' id='nav-settings'>🛠️</a>
-      <a href='#' id='nav-diary'>🌱</a>
-      <a href='#' id='nav-guide'>📙</a>
-	  <a href='#' id='nav-manual'>📑</a>
+      <a href='#' id='nav-status' title='Status'>📋</a>
+      <a href='#' id='nav-settings' title='Settings'>🛠️</a>
+      <a href='#' id='nav-diary' title='Grow Diary'>🌱</a>
+      <a href='#' id='nav-guide' title='Grow Guide'>📙</a>
+      <a href='https://github.com/syschelle/esp32-4x-relayboard-growcontrol/blob/main/README.md' target='_blank' title='Manual'>📑</a>
     </nav>
   </header>
 
-  <div id='content'>";
-  <!-- dynamic content will be loaded here -->
+  <div id='content'>
+   <!-- dynamic content will be loaded here -->
   </div>
 )rawliteral";
 
 const char HTML_BME280[] PROGMEM = R"rawliteral(
-<h2>📋 Messurments</h2>
+<h2>📋 Status</h2>
+<h3>Messurments</h3>
  <div class='grid-3x1'>
   <div class='tile'>Current Temperature:<BR><span id='tempSpan'>%CTEMP%</span> °C</div>
   <div class='tile'>Current VPD:<BR><span id='vpdSpan'>%CVPD%</span> kPa</div>
@@ -256,25 +319,37 @@ const char HTML_BME280[] PROGMEM = R"rawliteral(
 const char HTML_HCSR04[] PROGMEM = R"rawliteral(
  <div class='tile'>Water Level:<BR>%WATERLEVEL%</div>
  </div>
- <div class='grid-1x1' 'align=right'><button id='waterlevelBtn' type='button' type='button' onclick=\"window.location.href='/waterlevel'\">Ping Water Tank Sonar</button></div>
+ <div class='grid-1x1'><button id='waterlevelBtn' type='button' type='button' onclick=\"window.location.href='/waterlevel'\">Ping Water Tank Sonar</button></div>
 )rawliteral";
 
 const char HTML_END[] PROGMEM = R"rawliteral(
-</body>
+  </body>
 </html>
+)rawliteral";
+
+const char HTML_SETTINGS_START[] PROGMEM = R"rawliteral(
+<h2>🛠️ Settings</h2><form action='/save' method='post'>
+ <div class='grid-settings'>
+    <div class='tile-right-settings'>Set Controller Name: <input name='webControllerName' type='Text' value='%CONTRALLERNAME%' maxlength='20' placeholder='max leght 20'>
+    <br>Start Grow Date: <input name='webGrowStart' style='width: 120px;' type='date' value='%GROWSTARTDATE%'>
+    <br>Sart Flowering Date: <input name='webFloweringStart' style='width: 120px;' type='date' value='%FLOWERINGSTARTDATE%'></div>
+    <div class='tile-right-settings'>Target Temperature: <input name='set_temp' style='width: 70px;' type='number' step='0.5' min='18' max='30' value='%TARGETTEMPERATURE%'>°C</div>
+)rawliteral";
+
+const char HTML_SETTINGS_END[] PROGMEM = R"rawliteral(
+ <button type='submit'>Save Settings</button></form><div class='form-actions'><button id='rebootBtn' type='button' type='button' onclick=\"window.location.href='/reboot'\">Reboot Controller</button></div>
 )rawliteral";
 
 const char HTML_DIARYTOP[] PROGMEM = R"rawliteral(
 <h2>🌱 Grow Diary</h2>
-<div class='grid-1x4'>
-  <div class='tile'>Date:
-    <input type="date" id="date" /></div>
+<div class='grid-1x4' >
+  <div class='tile' >Date:<br>
+    <input type='date' id='notedate'  value='%ACTUALDATE%' /></div>
 )rawliteral";
 
 const char HTML_DIARYBOTTOM[] PROGMEM = R"rawliteral(
-    <div class='tile'>Note:
-    <textarea id="note" maxlength='50' rows="4" placeholder="What happened? Max. 50 characters!"></textarea></div>
-
+    <div class='tile'>Note:<br>
+    <input type=text id='note' style='width: 360px;' placeholder='What happened? Max. 50 characters!'></div>
     <div class='tile'>
       <button onclick='addEntry()'>Add Entry</button>
       <button onclick='loadEntries()'>Load Entries</button>
