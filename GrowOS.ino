@@ -20,10 +20,6 @@
 #include <html.h>
 #include <js.h>
 
-// ====== Wi-Fi Configuration ======
-const char* WIFI_SSID = "ssid";
-const char* WIFI_PASS = "pwd";
-
 // ====== Function Prototypes ======
 void loadPreferences();
 void savePreferences();
@@ -40,93 +36,6 @@ struct Timer {
   unsigned long previousMillis;
   void (*callback)();
 };
-
-
-String convertDate(String dts) {
-  // Convert "DD.MM.YYYY" → "YYYY-MM-DD" for the date input
-  String iso = "";
-  if (dts.length() == 10) {
-    iso = dts.substring(6, 10) + "-" + dts.substring(3, 5) + "-" + dts.substring(0, 2);
-    return iso;
-  }
-}
-
-// calculate elapsed days and weeks from defined date
-void calculateTimeSince(String startDate, int &days, int &weeks) {
-  struct tm tmStart = { 0 };
-  int y, m, d;
-  sscanf(startDate.c_str(), "%d-%d-%d", &y, &m, &d);
-  tmStart.tm_mday = d;
-  tmStart.tm_mon = m - 1;
-  tmStart.tm_year = y - 1900;
-  tmStart.tm_hour = 0;
-  tmStart.tm_min = 1;
-  time_t startEpoch = mktime(&tmStart);
-  time_t nowEpoch = time(nullptr);
-  long diffSec = nowEpoch - startEpoch;
-  days = diffSec / 86400;
-  weeks = (days / 7) + 1;
-}
-
-// check HCSR04 sensor
-void checkWaterlevel() {
-  hcsr04Available = false;
-  int tries = 3;
-  for (int i = 0; i < tries; i++) {
-    delay(100);
-    unsigned int uS = sonar.ping();
-    if (uS > 0 && uS < US_ROUNDTRIP_CM * HCSR04_MAX_CM) {
-      hcsr04Available = true;
-      //check tank fill amount
-      distanceCM = 0.017 * uS;
-      tank_percent = (distanceCM - tank_empty) * 100.0 / (tank_full - tank_empty);
-      tank_percent = constrain(tank_percent, 0.0, 100.0);
-      Serial.println("→ HC-SR05 distance measurement: " + String(distanceCM) + "cm");
-      Serial.println("→ HC-SR05 fill amount: " + String(tank_percent) + "%");
-      break;
-    }
-  }
-  Serial.println(hcsr04Available
-    ? "✔ HC-SR04 sensor found."
-    : "✖ HC-SR04 sensor not found!");
-}
-
-//check ever minute the current vpd with target vpd, if current vpd higer than taget vpd then power on the humidifyer shelly
-//after 11 second the shelly fro the humidifyer turns automaticly off. Configure that in the Webinterface oft the shelly.
-void checkVpd() {
-  static unsigned long lastVPDcheck = 0;
-  int curPhase = prefs.getUInt("phase", 2);
-  String key = String("vpd_") + curPhase;
-  float targetVPD = prefs.getFloat(key.c_str(), defaultVPDs[curPhase]);
-  // current VPD already calculated as 'vpd'
-  if (lastVPD > (targetVPD)) {
-    //turn ON humidifyer fan
-    digitalWrite(relayPins[3], HIGH);
-    HTTPClient http;
-    String url = String("http://" + String(shellyHosts[0]) + "/relay/0?turn=on");
-    if (debug) Serial.println( "URL: " + url);
-    http.begin(url);
-    int httpResponseCode = http.GET();
-
-    if (httpResponseCode > 0) {
-      if (debug) Serial.print("HTTP Response code: ");
-      if (debug) Serial.println(httpResponseCode);
-      String payload = http.getString();
-      if (debug) Serial.println("Response payload: " + payload);
-    } else {
-      if (debug) Serial.print("Error code: ");
-      if (debug) Serial.println( httpResponseCode);
-      int httpResponseCode = http.GET();
-      if (httpResponseCode > 0) {
-        if (debug) Serial.println("HTTP Response code: " + httpResponseCode);
-        String payload = http.getString();
-        if (debug) Serial.println("Response payload: " + payload);
-      }
-    }
-    http.end();
-    if (debug) Serial.println("Humidifier ON (VPD too high)");
-  }
-}
 
 // this function is all prefs loading
 void loadPreferences() {
@@ -261,8 +170,8 @@ void handleSettings() {
 
   // Load current phase, VPD targets from prefs
   int curPhase = prefs.getUInt("phase", 1);
-  float vpdTargets[4];
-  for (int i = 1; i <= 3; i++) {
+  float vpdTargets[5];
+  for (int i = 1; i <= 4; i++) {
     char key[16];
     snprintf(key, sizeof(key), "vpd_%d", i);
     vpdTargets[i] = prefs.getFloat(key, defaultVPDs[i]);
@@ -294,102 +203,94 @@ void handleSettings() {
   //String isoFlowering = prefs.getString("flowering_start", "");
 
   // setting section
-  html += "<section id='phases'><h2>Settings</h2><form action='/save' method='post'>";
-  html += "<table><tr style='vertical-align:top'><td>";
-  html += "<div class='card'><h3>Set start grow date</h3>";
-  html += "<label>Grow Date: <input name='webGrowStart' style='width: 120px;' type='date' value='" + prefs.getString("start_date", "") + "'></label></div>";
-  html += "<div class='card'><h3>Set start flowering date</h3>";
-  if (flowering) {
-    html += "<label>Enable flowering: <input type='checkbox' name='flowering' checked></label>";
-  } else {
-    html += "<label>Enable flowering: <input type='checkbox' name='flowering'></label>";
-  }
-  html += "<label>Flowering Date: <input name='webFloweringStart' style='width: 120px;' type='date' value='" + prefs.getString("flowering_start", "") + "'></label></div>";
-  // setting section temperature
-  html +="<div class='card'><h3>Set target temerature</h3>";
-  html += "<label>Target Temperature: <input name='set_temp' style='width: 50px;' type='number' step='0.1' min='18' max='30' value='" + String(setTemp) + "'>°C</label></div>";
+  html += FPSTR(HTML_SETTINGS_START);
+  
+  // setting controller name
+  html.replace("%CONTRALLERNAME%", prefs.getString("controller_name", ""));
+  // setting grow start date
+  html.replace("%GROWSTARTDATE%", prefs.getString("start_date", ""));
+  //setting flowering date
+  html.replace("%FLOWERINGSTARTDATE%", prefs.getString("flowering_start", ""));
+  //setting target temperature
+  html.replace("%TARGETTEMPERATURE%", String(setTemp));
+
   // setting section growphase and temperature
-  html +="<div class='card'><h3>Set growphase and vpd values</h3>";
-  html += "<label>Current Phase: <select name='phase'>";
+  html += "<div class='tile-right-settings'>Set Cur. Phase and VPDs: <select name='phase'>";
   for (int i = 1; i <= 4; i++) {
     html += String("<option value='") + i + "'" + (i == curPhase ? " selected" : "") + ">" + phaseNames[i] + "</option>";
   }
-  html += "</select></label>";
-  for (int i = 1; i <= 3; i++) {
-    html += String("<label>") + phaseNames[i] + " VPD: <input name='vpd_" + String(i) + "' type='number' style='width: 50px;' step='0.01' value='" + String(vpdTargets[i], 2) + "'>kPa</label>";
+  html += "</select></label><br>";
+  for (int i = 1; i <= 4; i++) {
+    html += String("<label>") + phaseNames[i] + " VPD: <input name='vpd_" + String(i) + "' type='number' style='width: 50px;' step='0.01' value='" + String(vpdTargets[i], 2) + "'>kPa</label><br>";
   }
   html +="</div>";
-  html +="</td><td>";
   //setting Growlight
-  html +="<div class='card'><h3>Set growlight</h3>";
-  html +="<label>day at (time): <input type='time' name='light_start' value='" + lightStart + "' required></label>";
+  html += "<div class='tile-right-settings'>Light on at (time): <input type='time' name='light_start' value='" + lightStart + "' required><br>";
 
   //growlight: duration (10–20 hours)
-  html +="<label>day duration (hour): <select name='light_hours'>";
+  html +="Day duration (hour): <select name='light_hours'>";
   for (uint8_t h = 10; h <= 20; h++) {
     html += String("<option value='") + h + "'"
          + (h == lightHours ? " selected" : "") + ">"
          + String(h) + "</option>";
   }
-  html +="</select></label>";
-  html +="<label>night at (time): <input type='time' id='offTimeInput' name='light_end' value='" + String(lightEnd) + "' readonly></label>";
-  html +="<label>night duration (hour): <input type='number' style='width: 40px;' name='night_hours' min='1' max='30' value='" + String(24 - lightHours) + "' readonly></label>";
+  html +="</select></br>";
+  html +="Light off at (time): <input type='time' id='offTimeInput' name='light_end' value='" + String(lightEnd) + "' readonly><br>";
+  html +="Night duration (hour): <input type='number' style='width: 60px;' name='night_hours' step='0.5' min='10' max='20' value='" + String(24 - lightHours) + "' readonly></br>";
   html +="</div>";
-  html +="<div class='card'><h3>Set watering notification</h3>";
+  html +="<div class='tile-right-settings'>Set watering notification: ";
   if (watering) {
     html += "<label>Enable Watering: <input type='checkbox' name='watering' checked></label>";
   } else {
-    html += "<label>Enable Watering: <input type='checkbox' name='watering'></label>";
+    html += "<label>Enable Watering: <input type='checkbox' name='watering'></br>";
   }
-  html +="<label>watering every (day): <select name='water_interval'>";
+  html +="Watering every (day): <select name='water_interval'>";
   for (uint8_t wti = 1; wti <= 10; wti++) {
     html += String("<option value='") + wti + "'"
          + (wti == waterInterval ? " selected" : "") + ">"
          + String(wti) + "</option>";
   }
-  html +="</select></label>";
+  html +="</select></br>";
   html +="<label style='color:red;'>Pushover must be activated!</label>";
   html +="</div>";
-  html +="<div class='card'><h3>Tank sonar notification</h3>";
   if (tank) {
-    html += "<label>Enable Water Tank: <input type='checkbox' name='tank' checked></label>";
+    html += "<div class='tile-right-settings'>Enable Water Tank: <input type='checkbox' name='tank' checked></label>";
   } else {
-    html += "<label>Enable Water Tank: <input type='checkbox' name='tank'></label>";
+    html += "<div class='tile-right-settings'>Enable Water Tank: <input type='checkbox' name='tank'></label>";
   }
-  html +="<label>Tank Full (cm): <input name='tank_full' type='number' style='width: 50px;' step='1' value='" + String(tank_full) + "'></label>";
-  html +="<label>Tank Empty (cm): <input name='tank_empty' type='number' style='width: 50px;' step='1' value='" + String(tank_empty) + "'></label>";
-  html +="<label>Warning at (%): <input name='tank_warning' type='number' style='width: 50px;' min='10' max='50' step='5' value='" + String(tank_warning) + "'></label>";
+  html +="Tank Full (cm): <input name='tank_full' type='number' style='width: 50px;' step='1' value='" + String(tank_full) + "'><br>";
+  html +="Tank Empty (cm): <input name='tank_empty' type='number' style='width: 50px;' step='1' value='" + String(tank_empty) + "'><br>";
+  html +="Warning at (%): <input name='tank_warning' type='number' style='width: 50px;' min='10' max='50' step='5' value='" + String(tank_warning) + "'><br>";
   html +="<label style='color:red;'>Pushover must be activated!</label>";
-  html +="</td><td>";
+  html +="</div>";
   // setting section mqtt
-  html +="<div class='card'><h3>Set MQTT</h3>";
   if (mqtt) {
-    html += "<label>Enable MQTT: <input type='checkbox' name='mqtt' checked></label>";
+    html += "<div class='tile-right-settings'>Enable MQTT: <input type='checkbox' name='mqtt' checked>";
   } else {
-    html += "<label>Enable MQTT: <input type='checkbox' name='mqtt'></label>";
+    html += "<div class='tile-right-settings'>Enable MQTT: <input type='checkbox' name='mqtt'>";
   }
-  html += "<label>MQTT Broker: <input name='mqtt_broker' type='password' value='" + prefs.getString("mqtt_broker", "") + "'></label>";
-  html += "<label>MQTT Port: <input name='mqtt_port' type='text' value='" + prefs.getString("mqtt_port", "1883") + "'></label>";
-  html += "<label>MQTT User: <input name='mqtt_user' type='password' value='" + prefs.getString("mqtt_user", "") + "'></label>";
-  html += "<label>MQTT Pass: <input name='mqtt_pass' type='password' value='" + prefs.getString("mqtt_pass", "") + "'></label></div>";
+  html += "<br>MQTT Broker: <input name='mqtt_broker' type='password' value='" + prefs.getString("mqtt_broker", "") + "' placeholder='127.0.0.1'>";
+  html += "<br>MQTT Port: <input name='mqtt_port' type='text' value='" + prefs.getString("mqtt_port", "1883") + "'>";
+  html += "<br>MQTT User: <input name='mqtt_user' type='password' value='" + prefs.getString("mqtt_user", "") + "'>";
+  html += "<br>MQTT Pass: <input name='mqtt_pass' type='password' value='" + prefs.getString("mqtt_pass", "") + "'>";
+  html += "</div>";
   // setting section pushover
-  html +="<div class='card'><h3>Set pushover</h3>";
   if (pushover) {
-    html += "<label>Enable Pushover: <input type='checkbox' name='pushover' checked></label>";
+    html += "<div class='tile-right-settings'>Enable Pushover: <input type='checkbox' name='pushover' checked>";
   } else {
-    html += "<label>Enable Pushover: <input type='checkbox' name='pushover'></label>";
+    html += "<div class='tile-right-settings'>Enable Pushover: <input type='checkbox' name='pushover'>";
   }
-  html += "<label>Pushover Token: <input name='API Token' type='password' value='" + prefs.getString("pushover_token", "") + "'></label>";
-  html += "<label>Pushover User: <input name='User Key' type='password' value='" + prefs.getString("pushover_user", "") + "'></label></div>";
+  html += "<br>Pushover Token: <input name='API Token' type='password' value='" + prefs.getString("pushover_token", "") + "'>";
+  html += "<br>Pushover User: <input name='User Key' type='password' value='" + prefs.getString("pushover_user", "") + "'>";
+  html += "</div>";
   // setting section debug
-    html +="<div class='card'><h3>Set debugging</h3>";
   if (debug) {
-    html += "<label>Enable Debuglevel: <input type='checkbox' name='debug' checked></label></div>";
+    html += "<div class='tile-right-settings'>Enable Debuglevel: <input type='checkbox' name='debug' checked></div>";
   } else {
-    html += "<label>Enable Debuglevel: <input type='checkbox' name='debug'></label></div>";
+    html += "<div class='tile-right-settings'>Enable Debuglevel: <input type='checkbox' name='debug'></div>";
   }
-  html +="</td><tr></table>";
-  html += "<button type='submit'>Save Settings</button></form><div class='form-actions'><button id='rebootBtn' type='button' type='button' onclick=\"window.location.href='/reboot'\">Reboot Controller</button></div></section>";
+  
+  html += FPSTR(HTML_SETTINGS_END);
 
   server.send(200, "text/html", html);
 }
@@ -398,10 +299,12 @@ void handleDiary() {
   String html;
 
   int curPhase = prefs.getUInt("phase", 1);
-
+  
   html += FPSTR(HTML_DIARYTOP);
+  
+  html.replace("%ACTUALDATE%", String(actualDate));
 
-  html += "<div class='tile'><label>Phase:</label>";
+  html += "<div class='tile'>Phase:<br>";
   html += "<select name='phase'>";
   for (int i = 1; i <= 4; i++) {
     html += "<option value='" + String(phaseNames[i]) + "'" + (i == curPhase ? " selected" : "") + ">" + String(phaseNames[i]) + "</option>";
@@ -475,6 +378,9 @@ void setup() {
   configTzTime(TZ_INFO, NTP_SERVER);  // ESP32 Systemzeit mit NTP Synchronisieren
   getLocalTime(&local, 10000);        // Versuche 10 s zu Synchronisieren
   getLocalTime(&local);
+  //set actual date in global variable actualDate
+  char readDate[11]; // YYYY-MM-DD + null
+  strftime(actualDate, sizeof(readDate), "%Y-%m-%d", &local);
   Serial.println(&local, "now: %d.%m.%y  Zeit: %H:%M:%S");  // Zeit Datum Print Ausgabe formatieren
 
   // Persistent start date
@@ -767,7 +673,7 @@ void handleStatus() {
   } else html += "</div>";
 
   // Relays
-  html += "<h2>Relays</h2>";
+  html += "<h3>Relays</h3>";
   html += "<div class='grid-4x1'>";
   for (int i = 0; i < NUM_RELAYS; i++) {
     bool st = digitalRead(relayPins[i]);
@@ -779,7 +685,7 @@ void handleStatus() {
   html += "</div>";
 
   // Shelly devices
-  html += "<h2>Shellys</h2>";
+  html += "<h3>Shellys</h3>";
   html += "<div class='grid-5x1'>";
   for (int i = 0; i < NUM_SHELLY; i++) {
     String s = shellyAvailable[i] ? (shellyState[i] ? "ON" : "OFF") : "?";
@@ -869,6 +775,8 @@ void handleRoot() {
     iso = stored.substring(6, 10) + "-" + stored.substring(3, 5) + "-" + stored.substring(0, 2);
   }
 
+  curPhase = prefs.getUInt("phase", 1);
+
   // Build HTML
   String html = FPSTR(HTML_HEADER);
   
@@ -877,10 +785,11 @@ void handleRoot() {
   html += FPSTR(HTML_JS);
   html += FPSTR(HTML_END);
   // Replace placeholder
-  html.replace("%CONTROLLERNAME%", String(CONTROLLERNAME));
+  html.replace("%CONTROLLERNAME%",  prefs.getString("controller_name", ""));
+  html.replace("%CURRPHAES%",  phaseNames[curPhase]);  
   
   
-    if (prefs.getBool("flowering")) {
+    if (curPhase == 3) {
       int daysSinceFlowering;
       int weeksSinceFlowering;
 
@@ -1054,13 +963,4 @@ void savePreferences() {
   Serial.print("Pref updated.");
 
   loadPreferences();
-}
-
-void sendPushover(const char* message) {
-  HTTPClient http;
-  http.begin("https://api.pushover.net/1/messages.json");
-  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-  String post = "token=" + pushoverToken + "&user=" + pushoverUserKey + "&message=" + message;
-  http.POST(post);
-  http.end();
 }
