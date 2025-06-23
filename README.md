@@ -82,16 +82,16 @@ A grow tent automation system using an ESP32 microcontroller, a 4x relay board, 
 ## Web Interface
 
 - **Status Page:** Displays live temperature, humidity, VPD, and relay/shelly statuses. Toggle outputs manually or let automation rules control them.
-![image](https://github.com/user-attachments/assets/213abe61-5c79-4e0a-91bf-66adcabba45d)
+![image](https://github.com/user-attachments/assets/7fe15398-e46e-4534-9aec-3b128e3bff6f)
 
 - **Settings Page:** Adjust controller name, time zone, one timeserver, phase, VPD targets, temperature, light setting, max min oft the HC-SR04 with warning level,  MQTT, and pushover notification settings.
 ![image](https://github.com/user-attachments/assets/9bbde8e6-ed5b-43c0-ae9a-ee5b15f89dc6)
 
 - **Grow Diary Page:** Keep your little grow diary.
-![image](https://github.com/user-attachments/assets/243c0d8a-2613-4154-b225-d6ce6f2e3d94)
+![image](https://github.com/user-attachments/assets/79d59b64-386e-4b03-aee4-a0ed55c7c826)
 
 - **Grow Guideline Page:** This guide is just a suggestion!
-![image](https://github.com/user-attachments/assets/be412bb5-2e7f-4a43-a3b5-37d684bb6a2d)
+![image](https://github.com/user-attachments/assets/cd76b61d-cb03-4c86-85da-63c653bb9ed5)
 
 - **Manual Page:** Shows the README.md of this poject on github.
 
