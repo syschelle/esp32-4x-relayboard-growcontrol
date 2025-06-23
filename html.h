@@ -35,12 +35,20 @@ const char HTML_HEADER[] PROGMEM = R"rawliteral(
 
     .header-grid {
       display: grid;
-      grid-template-columns: 1fr 2fr 1fr;
+      grid-auto-rows: 1fr;
+      grid-template-columns: 0.7fr 2fr 0.6fr 0.4fr;
+      grid-template-rows: repeat(5, 1fr);
+      gap: 8px;
       align-items: center;
+      height: 40px;
     }
 
     .center-text {
       text-align: center;
+    }
+
+    .right-info {
+      text-align: right;
     }
 
     .center-text .title {
@@ -56,9 +64,12 @@ const char HTML_HEADER[] PROGMEM = R"rawliteral(
     .right-align {
       text-align: right;
       font-size: 0.9rem;
+      with: 40px;
     }
 
     .statusMsg {
+      grid-column: span 4 / span 4;
+      grid-row-start: 2;
       background-color: var(--statusMsg-bg);
       color: var(--statusMsg-text);
 	    height: 20px;
@@ -281,8 +292,14 @@ const char HTML_HEADER[] PROGMEM = R"rawliteral(
     <div class='header-grid'>
       <div class='logo'>%CONTROLLERNAME%</div>
       <div class='center-text'>
-        <div class='title' style='color:#ff9900;'>%ELAPSEDGROW% current phase: %CURRPHAES%</div>
+        <div class='title' style='color:#ff9900;'>%ELAPSEDGROW%</div>
         <div class='title' style='color:#D20103;'>%ELAPSEDFLOWERING%</div>
+        <div class='title' style='color:#BCBABA;'>%ELAPSEDDRYING%</div>
+      </div>
+      <div class='right-info'>
+        <div class='title'>cur. phase: %CURRPHAES%
+        <br>cur. light cycle: %LIGHTCYCLE%
+        </div>
       </div>
       <div class='right-align' id='datum'></div>
     </div>
@@ -330,14 +347,20 @@ const char HTML_END[] PROGMEM = R"rawliteral(
 const char HTML_SETTINGS_START[] PROGMEM = R"rawliteral(
 <h2>🛠️ Settings</h2><form action='/save' method='post'>
  <div class='grid-settings'>
-    <div class='tile-right-settings'>Set Controller Name: <input name='webControllerName' type='Text' value='%CONTRALLERNAME%' maxlength='20' placeholder='max leght 20'>
-    <br>Start Grow Date: <input name='webGrowStart' style='width: 120px;' type='date' value='%GROWSTARTDATE%'>
-    <br>Sart Flowering Date: <input name='webFloweringStart' style='width: 120px;' type='date' value='%FLOWERINGSTARTDATE%'></div>
+    <div class='tile-right-settings'>Controller Name: <input name='webControllerName' type='Text' value='%CONTRALLERNAME%' maxlength='20' placeholder='max leght 20'>
+    <br>Timezone: <input name='WebTimezone' value='%TIMEZOEN%'>
+    <br>NTP Server: <input name='WebNtpServer' value='%NTPSERVER%'></div>
+    <div class='tile-right-settings'>Start Grow Date: <input name='webGrowStart' style='width: 120px;' type='date' value='%GROWSTARTDATE%'>
+    <br>Start Flowering Date: <input name='webFloweringStart' style='width: 120px;' type='date' value='%FLOWERINGSTARTDATE%'>
+    <br>Start Drying Date: <input name='webDryingStart' style='width: 120px;' type='date' value='%DRYINGSTARTDATE%'></div>
     <div class='tile-right-settings'>Target Temperature: <input name='set_temp' style='width: 70px;' type='number' step='0.5' min='18' max='30' value='%TARGETTEMPERATURE%'>°C</div>
 )rawliteral";
 
 const char HTML_SETTINGS_END[] PROGMEM = R"rawliteral(
- <button type='submit'>Save Settings</button></form><div class='form-actions'><button id='rebootBtn' type='button' type='button' onclick=\"window.location.href='/reboot'\">Reboot Controller</button></div>
+ <button type='submit'>Save Settings</button></form> <button id='rebootBtn' type='button' type='button' onclick=\"window.location.href='/reboot'\">Reboot Controller</button>
+ <a href='/factoryReset' onclick="return confirm('are you sure?');">
+ <button style="background:red;">factory reset</button>
+</a>
 )rawliteral";
 
 const char HTML_DIARYTOP[] PROGMEM = R"rawliteral(
@@ -349,7 +372,7 @@ const char HTML_DIARYTOP[] PROGMEM = R"rawliteral(
 
 const char HTML_DIARYBOTTOM[] PROGMEM = R"rawliteral(
     <div class='tile'>Note:<br>
-    <input type=text id='note' style='width: 360px;' placeholder='What happened? Max. 50 characters!'></div>
+    <input type=text id='note' style='width: 400px;' maxlength='50' placeholder='What happened? Max. 50 characters!'></div>
     <div class='tile'>
       <button onclick='addEntry()'>Add Entry</button>
       <button onclick='loadEntries()'>Load Entries</button>
@@ -380,4 +403,90 @@ const char HTML_GUIDE[] PROGMEM = R"rawliteral(
   <b>Temperature Day:</b> 20–26 °C (last 2 weeks 19°C - 24°C)<br><br>
   <b>Temperature Night:</b><br>approximately 2–10 °C cooler (16°C – 21°C)</font></div>
  </div>
+)rawliteral";
+
+const char HTML_WIFI[] PROGMEM = R"rawliteral(
+<!DOCTYPE html lang="de">
+<html class='dark'>
+<head>
+  <meta charset='UTF-8' />
+  <meta name='viewport' content='width=device-width, initial-scale=1.0' />
+  <title>esp grow control</title>
+  <style>
+    :root {
+      --bg: #121212;
+      --fg: #f0f0f0;
+      --header-bg: #1e1e1e;
+      --statusMsg-bg: #003366;
+      --statusMsg-text: #dcefff;
+      --link-color: #66aaff;
+      --gray: #888;
+      --bg: #111827;
+      --grid-with: 800;
+    }
+
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background-color: var(--bg);
+      color: var(--fg);
+      padding: 1rem;
+    }
+
+    header {
+      background-color: var(--header-bg);
+      border-radius: 16px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .grid-1x1 {
+      display: grid;
+      justify-content: center;
+      grid-template-columns: repeat(1, 1fr);
+      gap: 15px;
+      max-width: var(--grid-with);
+      margin: auto;
+      align-items: center;
+    }
+
+    button {
+      background-color: var(--header-bg);
+      cursor: pointer;
+      text-transform: uppercase;
+      color: white;
+      padding: 10px 10px;
+      margin: 10px;
+      border: 2px solid #ff9900;
+      border-radius: 8px;
+      font-size: 1em;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+      transition: background-color 0.3s ease;
+    }
+
+    button:hover {
+      background-color: var(--statusMsg-bg);
+    }
+
+    input, textarea, select {
+      font-family: sans-serif;
+      padding: 0.5rem;
+      margin: 0.5rem 0;
+      background: var(--bg);
+      color: #f0f0f0;
+      border: 1px solid #444;
+      border-radius: 6px;
+      cursor: pointer;
+      color-scheme: dark;
+    }
+  </style>
+</head>
+<body>
+  <h2>Wifi configuration</h2><form action='/wifi' method='post'>
+  <div class='grid-1x1'>
+   <section id='wifi'><div class='tile'>SSID: <input type='text' name='webWifiSsid' value='%WIFISSID%'>
+   <br>Password: <input type='text' name='WebWifiPass' value='%WIFIPWD%'></div></section>
+   <button type='submit'>save credentials</button></form></section>
+</body>
+</html>
 )rawliteral";

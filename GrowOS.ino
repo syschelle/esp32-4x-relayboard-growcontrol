@@ -14,11 +14,16 @@
 #include <Preferences.h>
 #include <math.h>
 #include <PubSubClient.h>
+#include <cmath>
 #include <NewPing.h>
 #include <variables.h>
 #include <function.h>
 #include <html.h>
 #include <js.h>
+
+// tasks
+#include <task_Check_Vpd.h>
+#include <task_Check_Temperature.h>
 
 // ====== Function Prototypes ======
 void loadPreferences();
@@ -30,12 +35,6 @@ void pollShellyStatuses();
 void checkWaterlevel();
 bool mqttConnect();
 void sendPushover(const char* message);
-
-struct Timer {
-  unsigned long interval;
-  unsigned long previousMillis;
-  void (*callback)();
-};
 
 // this function is all prefs loading
 void loadPreferences() {
@@ -61,6 +60,7 @@ void loadPreferences() {
   int diffWeeks = (diffDays / 7) + 1;
 
   startFlowering = prefs.getString("flowering_start");
+  startDrying = prefs.getString("drying_start");
 
   // Load current phase, VPD targets from prefs
   int curPhase = prefs.getUInt("phase", 1);
@@ -207,21 +207,27 @@ void handleSettings() {
   
   // setting controller name
   html.replace("%CONTRALLERNAME%", prefs.getString("controller_name", ""));
+  // setting ntp server
+  html.replace("%TIMEZOEN%", tzInfo);
+  // setting timezone (POSIX-String)
+  html.replace("%NTPSERVER%",ntpServer);
   // setting grow start date
   html.replace("%GROWSTARTDATE%", prefs.getString("start_date", ""));
   //setting flowering date
   html.replace("%FLOWERINGSTARTDATE%", prefs.getString("flowering_start", ""));
+  //setting drying date
+  html.replace("%DRYINGSTARTDATE%", prefs.getString("drying_start", ""));
   //setting target temperature
   html.replace("%TARGETTEMPERATURE%", String(setTemp));
 
   // setting section growphase and temperature
-  html += "<div class='tile-right-settings'>Set Cur. Phase and VPDs: <select name='phase'>";
+  html += "<div class='tile-right-settings'>Set Cur. Phase: <select name='phase'>";
   for (int i = 1; i <= 4; i++) {
     html += String("<option value='") + i + "'" + (i == curPhase ? " selected" : "") + ">" + phaseNames[i] + "</option>";
   }
   html += "</select></label><br>";
   for (int i = 1; i <= 4; i++) {
-    html += String("<label>") + phaseNames[i] + " VPD: <input name='vpd_" + String(i) + "' type='number' style='width: 50px;' step='0.01' value='" + String(vpdTargets[i], 2) + "'>kPa</label><br>";
+    html += String("<label>Set ") + phaseNames[i] + " VPD: <input name='vpd_" + String(i) + "' type='number' style='width: 50px;' step='0.01' value='" + String(vpdTargets[i], 2) + "'>kPa</label><br>";
   }
   html +="</div>";
   //setting Growlight
@@ -238,11 +244,11 @@ void handleSettings() {
   html +="Light off at (time): <input type='time' id='offTimeInput' name='light_end' value='" + String(lightEnd) + "' readonly><br>";
   html +="Night duration (hour): <input type='number' style='width: 60px;' name='night_hours' step='0.5' min='10' max='20' value='" + String(24 - lightHours) + "' readonly></br>";
   html +="</div>";
-  html +="<div class='tile-right-settings'>Set watering notification: ";
+  html +="<div class='tile-right-settings'>";
   if (watering) {
-    html += "<label>Enable Watering: <input type='checkbox' name='watering' checked></label>";
+    html += "Enable Watering Nofification: <input type='checkbox' name='watering' checked></label><br>";
   } else {
-    html += "<label>Enable Watering: <input type='checkbox' name='watering'></br>";
+    html += "Enable Watering Nofification: <input type='checkbox' name='watering'></br>";
   }
   html +="Watering every (day): <select name='water_interval'>";
   for (uint8_t wti = 1; wti <= 10; wti++) {
@@ -254,9 +260,9 @@ void handleSettings() {
   html +="<label style='color:red;'>Pushover must be activated!</label>";
   html +="</div>";
   if (tank) {
-    html += "<div class='tile-right-settings'>Enable Water Tank: <input type='checkbox' name='tank' checked></label>";
+    html += "<div class='tile-right-settings'>Enable Water Tank: <input type='checkbox' name='tank' checked></label><br>";
   } else {
-    html += "<div class='tile-right-settings'>Enable Water Tank: <input type='checkbox' name='tank'></label>";
+    html += "<div class='tile-right-settings'>Enable Water Tank: <input type='checkbox' name='tank'></label><br>";
   }
   html +="Tank Full (cm): <input name='tank_full' type='number' style='width: 50px;' step='1' value='" + String(tank_full) + "'><br>";
   html +="Tank Empty (cm): <input name='tank_empty' type='number' style='width: 50px;' step='1' value='" + String(tank_empty) + "'><br>";
@@ -328,76 +334,140 @@ void handleManual() {
   String html;
 }
 
-//timer setup
-Timer timers[] = {
-  // vpd timer every 1 minute
-  { 60000, 0, checkVpd },
-  // ... weitere Timer hier
-};
-
 void setup() {
   Serial.begin(115200);
   Wire.begin();
+  
+  prefs.begin("growtent", false);
 
-  // Initialize relay outputs (LOW = OFF)
-  for (int i = 0; i < NUM_RELAYS; i++) {
-    pinMode(relayPins[i], OUTPUT);
-    digitalWrite(relayPins[i], LOW);
-  }
+  //Load WIFI access data from prefs
+  String ssid = prefs.getString("wifi_ssid", DEFAULT_WIFI_SSID);
+  String pass = prefs.getString("wifi_pass", DEFAULT_WIFI_PASS);
 
-  // initialize BME280 sensor
-  unsigned long startTime = millis();
+  // In setup() nach prefs.begin(...)
+  tzInfo    = prefs.getString("tz_info", DEFAULT_TZ_INFO);
+  ntpServer = prefs.getString("ntp_server", DEFAULT_NTP_SERVER);
 
-  while (millis() - startTime < 10000) {
-    if (bme.begin(BME_ADDR)) {
-      Serial.println("✔ BME280 successfully initialized!");
-      bmeAvailable = true;
-      break;
-    } else {
-      Serial.println("✖ BME280 not found, retrying in 500 ms");
+  
+  if (ssid.length() && pass.length()) {
+    // connect to Wi-Fi
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid.c_str(), pass.c_str());
+    Serial.print("Connecting to Wifi");
+    Serial.print(ssid);
+    unsigned long start = millis();
+    const unsigned long timeout = 10000; // 10 seconds
+    while (WiFi.status() != WL_CONNECTED && millis() - start < timeout) {
       delay(500);
+      Serial.print('.');
     }
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println();
+      Serial.print("Connected, IP: ");
+      Serial.println(WiFi.localIP());
+    } else {
+      Serial.println();
+      Serial.println("WIFI connection failed!");
+      softAp = true;
+      startSoftAP();
+    }
+  } else {
+    // No data stored → SoftAP
+    softAp = true;
+    startSoftAP();
   }
+  
+  if (!softAp) {
+    // initialize BME280 sensor
+    unsigned long startTime = millis();
 
-  // connect to Wi-Fi
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  Serial.print("Connecting");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.print(" connected");
-  Serial.println(WiFi.localIP());
+    while (millis() - startTime < 10000) {
+      if (bme.begin(BME_ADDR)) {
+        Serial.println("✔ BME280 successfully initialized!");
+        bmeAvailable = true;
+        break;
+      } else {
+        Serial.println("✖ BME280 not found, retrying in 500 ms");
+        delay(500);
+      }
+    }
 
-  // load all preferences
-  loadPreferences();
+    // Initialize relay outputs (LOW = OFF)
+    for (int i = 0; i < NUM_RELAYS; i++) {
+      pinMode(relayPins[i], OUTPUT);
+      digitalWrite(relayPins[i], LOW);
+    }
 
-  // syncing NTP time
-  Serial.println("syncing NTP time");
-  struct tm local;
-  configTzTime(TZ_INFO, NTP_SERVER);  // ESP32 Systemzeit mit NTP Synchronisieren
-  getLocalTime(&local, 10000);        // Versuche 10 s zu Synchronisieren
-  getLocalTime(&local);
-  //set actual date in global variable actualDate
-  char readDate[11]; // YYYY-MM-DD + null
-  strftime(actualDate, sizeof(readDate), "%Y-%m-%d", &local);
-  Serial.println(&local, "now: %d.%m.%y  Zeit: %H:%M:%S");  // Zeit Datum Print Ausgabe formatieren
+    // load all preferences
+    loadPreferences();
 
-  // Persistent start date
-  String sd = startDate;
-  if (startDate == "") {
-    if (debug) Serial.println("Start Date empty!");
-  }
-  if (debug) Serial.println("Start Date: " + startDate );
-  if (debug) Serial.println("Flowering Date: " + startFlowering );
-  //enable mqtt if pref variable mqtt ist true
-  if (server.hasArg("mqtt")) {
-    //uint16_t mqttPort = mqttPortStr.toInt();            // String → Integer
-    mqttClient.setServer(mqtt_Broker.c_str(), mqtt_Port.toInt());  // String → const char*
-    mqttConnect();
+    // syncing NTP time
+    Serial.println("syncing NTP time");
+    struct tm local;
+    configTzTime(tzInfo.c_str(), ntpServer.c_str());  // Synchronizing ESP32 system time with NTP
+    getLocalTime(&local, 10000);        // Try to synchronize 10 s
+    getLocalTime(&local);
+    //set actual date in global variable actualDate
+    char readDate[11]; // YYYY-MM-DD + null
+    strftime(actualDate, sizeof(readDate), "%Y-%m-%d", &local);
+    Serial.println(&local, "now: %d.%m.%y  Zeit: %H:%M:%S");  // Format date print output
+
+    // Persistent start date
+    if (debug) Serial.println("Start Date: " + startDate );
+    
+    if (debug) Serial.println("Flowering Date: " + startFlowering );
+    //enable mqtt if pref variable mqtt ist true
+    
+    if (server.hasArg("mqtt")) {
+      //uint16_t mqttPort = mqttPortStr.toInt();            // String → Integer
+      mqttClient.setServer(mqtt_Broker.c_str(), mqtt_Port.toInt());  // String → const char*putFloat("set_temp"
+      mqttConnect();
+    }
+
+    xTaskCreatePinnedToCore(
+      taskCheckVpd,                   // Task function
+      "Check VPD every 30 seconds",   // Task name
+      8192,                           // Stack size
+      NULL,                           // Task input parameters
+      1,                              // Task priority, be carefull when changing this
+      NULL,                           // Task handle, add one if you want control over the task (resume or suspend the task)
+      1                               // Core to run the task on
+    );
+
+    xTaskCreatePinnedToCore(
+      taskCheckTemperature,                   // Task function
+      "Check Temperature every 60 seconds",   // Task name
+      8192,                                   // Stack size
+      NULL,                                   // Task input parameters
+      1,                                      // Task priority, be carefull when changing this
+      NULL,                                   // Task handle, add one if you want control over the task (resume or suspend the task)
+      1                                       // Core to run the task on
+    );
+
   }
   
   // Define routes
+  //route for factory reset
+  server.on("/factoryReset", HTTP_GET, [](){
+  resetFactory();
+  // send 303 redirect not nötig, weil wir per ESP.restart neu starten
+  });
+  
+  //route to store Wifi ssid and passord
+  server.on("/wifi", HTTP_POST, [](){
+    // load parameters
+    String ssid = server.arg("webWifiSsid");
+    String pass = server.arg("WebWifiPass");
+    // Speichere in prefs
+    prefs.putString("wifi_ssid", ssid);
+    prefs.putString("wifi_pass", pass);
+    Serial.println("save wifi data: " + ssid + " and " + pass );
+    //prefs.end();
+    server.sendHeader("Location", "/");
+    server.send(303);
+    delay(1000);
+    ESP.restart();
+  });
   server.on("/", HTTP_GET, handleRoot);
   server.on("/status", HTTP_GET, handleStatus);
   server.on("/settings", HTTP_GET, handleSettings);
@@ -424,10 +494,28 @@ void setup() {
     serializeJson(doc, out);
     server.send(200, "application/json", out);
   });
+  //api interface
+  server.on("/api", HTTP_GET, [](){
+    // build XML
+    String xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    xml += "<xsl:stylesheet version=\"1.0\" xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\">";
+    xml += "<Growtent>\n";
+    xml += "  <Temperature unit=\"°C\">" + String(lastTemperature) + "</Temperature>\n";
+    xml += "  <Humidity    unit=\"%\">"   + String(lastHumidity) + "</Humidity>\n";
+    xml += "  <VPD         unit=\"kPa\">"  + String(lastVPD) + "</VPD>\n";
+    if (distanceCM >= 0) {
+      xml += "  <Distance    unit=\"cm\">"   + String(distanceCM) + "</Distance>\n";
+    } else {
+      xml += "  <Distance    unit=\"cm\"/>\n";
+    }
+    xml += "</Growtent>\n";
+    xml += "</xsl:stylesheet>";
 
-  // ===============================
+    // Sende mit XML-Content-Type
+    server.send(200, "application/xml", xml);
+  });
+
   // route for pure sensor data. for update on the fly in the web page.
-  // ===============================
   server.on("/sensordata", HTTP_GET, []() {
     // JSON building: { "temperature": 21.5, "humidity": 45.3, "vpd": 1.23 }
     DynamicJsonDocument doc(128);
@@ -456,28 +544,24 @@ void setup() {
   //check HC-SR04 for the first time
   checkWaterlevel();
 
-  // Start server
+  // Start webserver
   server.begin();
   Serial.println("Web server started");
 
   lastShellyPoll = 0;
+
 }
 
 void loop() {
   server.handleClient();
 
-  unsigned long currentMillis = millis();
-  for (auto& t : timers) {
-    if (currentMillis - t.previousMillis >= t.interval) {
-      t.previousMillis = currentMillis;
-      t.callback();
-    }
-  }
+  
 
   if (mqtt) {
     if (!mqttClient.connected()) mqttConnect();
     mqttClient.loop();
   }
+  
 
   // Daily NTP resync at 01:00
   struct tm timeinfo;
@@ -485,7 +569,7 @@ void loop() {
     if (timeinfo.tm_hour == 1 && timeinfo.tm_min == 0 && timeinfo.tm_mday != lastSyncDay) {
       if (debug) Serial.println("Performing daily NTP sync...");
       if (pushover) sendPushover("Performing daily NTP sync...");
-      configTzTime(TZ_INFO, NTP_SERVER);
+      configTzTime(tzInfo.c_str(), ntpServer.c_str());
       lastSyncDay = timeinfo.tm_mday;
     }
   }
@@ -774,19 +858,32 @@ void handleRoot() {
   if (stored.length() == 10) {
     iso = stored.substring(6, 10) + "-" + stored.substring(3, 5) + "-" + stored.substring(0, 2);
   }
-
-  curPhase = prefs.getUInt("phase", 1);
-
-  // Build HTML
-  String html = FPSTR(HTML_HEADER);
   
-  html.replace("%ELAPSEDGROW%", "Grow: " + String(diffDays) + " days ( " + String(diffWeeks) + "th week )");
+  curPhase = prefs.getUInt("phase", 1);
+  
+  int dayhour = prefs.getUInt("light_hours");
+  int nighthour = 24 - dayhour;
+  
+  if (softAp) {
+  
+    String html = FPSTR(HTML_WIFI);
+    
+    html.replace("%WIFISSID%",  String(prefs.getString("wifi_ssid", "")));
+    html.replace("%WIFIPWD%",  String(prefs.getString("wifi_pass", "")));
+    
+    server.send(200, "text/html", html);
+  } else {  
+    // Build HTML
+    String html = FPSTR(HTML_HEADER);
+  
+    html.replace("%ELAPSEDGROW%", "Grow since " + String(diffDays) + " days ( " + String(diffWeeks) + "th week )");
 
-  html += FPSTR(HTML_JS);
-  html += FPSTR(HTML_END);
-  // Replace placeholder
-  html.replace("%CONTROLLERNAME%",  prefs.getString("controller_name", ""));
-  html.replace("%CURRPHAES%",  phaseNames[curPhase]);  
+    html += FPSTR(HTML_JS);
+    html += FPSTR(HTML_END);
+    // Replace placeholder
+    html.replace("%CONTROLLERNAME%",  prefs.getString("controller_name", ""));
+    html.replace("%CURRPHAES%",  phaseNames[curPhase]);  
+    html.replace("%LIGHTCYCLE%", String(dayhour) + "/" + String(nighthour)); 
   
   
     if (curPhase == 3) {
@@ -794,11 +891,21 @@ void handleRoot() {
       int weeksSinceFlowering;
 
       calculateTimeSince(prefs.getString("flowering_start", ""), daysSinceFlowering, weeksSinceFlowering);
-      html.replace("%ELAPSEDFLOWERING%", "Flowering: " + String(daysSinceFlowering) + " days ( " + String(weeksSinceFlowering) + "th week )");
+      html.replace("%ELAPSEDFLOWERING%", "Flowering since " + String(daysSinceFlowering) + " days ( " + String(weeksSinceFlowering) + "th week )");
 
     } else html.replace("%ELAPSEDFLOWERING%", " ");
 
-  server.send(200, "text/html", html);
+    if (curPhase == 4) {
+      int daysSinceDrying;
+      int weeksSinceDrying;
+
+      calculateTimeSince(prefs.getString("drying_start", ""), daysSinceDrying, weeksSinceDrying);
+      html.replace("%ELAPSEDDRYING%", "Drying since " + String(daysSinceDrying) + " days ( " + String(weeksSinceDrying) + "th week )");
+
+    } else html.replace("%ELAPSEDDRYING%", " ");
+
+    server.send(200, "text/html", html);
+  }
 }
 
 // Handler for relay toggles
@@ -856,12 +963,14 @@ void savePreferences() {
     prefs.putString("start_date", server.arg("webGrowStart"));  // stores as "YYYY-MM-DD"
   }
   
-  if (server.hasArg("flowering")) prefs.putBool("flowering", true);
-  else prefs.putBool("flowering", false);
-
   // Save flowering start date if provided
   if (server.hasArg("webFloweringStart")) {
     prefs.putString("flowering_start", server.arg("webFloweringStart"));  // stores as "YYYY-MM-DD"
+  }
+
+  // Save drying start date if provided
+  if (server.hasArg("webDryingStart")) {
+    prefs.putString("drying_start", server.arg("webDryingStart"));  // stores as "YYYY-MM-DD"
   }
 
   // Save growth phase and VPD targets as befor
@@ -870,12 +979,12 @@ void savePreferences() {
     return;
   }
   int ph = server.arg("phase").toInt();
-  if (ph < 1 || ph > 3) {
+  if (ph < 1 || ph > 4) {
     server.send(400);
     return;
   }
   prefs.putUInt("phase", ph);
-  for (int i = 1; i <= 3; i++) {
+  for (int i = 1; i <= 4; i++) {
     char key[16];
     snprintf(key, sizeof(key), "vpd_%d", i);
     if (server.hasArg(key)) prefs.putFloat(key, server.arg(key).toFloat());

@@ -1,6 +1,8 @@
 // ====== Wi-Fi Configuration ======
-const char* WIFI_SSID = "ssid";
-const char* WIFI_PASS = "pwd";
+const char* DEFAULT_WIFI_SSID = "false";
+const char* DEFAULT_WIFI_PASS = "false";
+
+bool softAp = false;
 
 // ====== MQTT placeholder variable ======
 String mqtt_Broker;  // loaded from prefs
@@ -18,7 +20,6 @@ String pushoverToken;    // loaded from prefs
 String pushoverUserKey;  // loaded from prefsControllerName
 
 // ====== Last published sensor values ======
-#include <cmath>
 float lastTemperature = NAN;
 float lastHumidity = NAN;
 float lastVPD = NAN;
@@ -31,8 +32,12 @@ const char* shellyHosts[NUM_SHELLY] = {"192.168.178.49","192.168.1.101","192.168
 const char* shellyNames[NUM_SHELLY] = {"Humidifier","Heater","Light","Exthaust","Profan"};
 
 // ====== NTP Configuration default europe/Berlin ======
-#define NTP_SERVER "de.pool.ntp.org"
-#define TZ_INFO "WEST-1DWEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00"  // Western European Time
+// default-NTP-Server
+const char* DEFAULT_NTP_SERVER = "de.pool.ntp.org";
+// default-timezone (POSIX-String)
+const char* DEFAULT_TZ_INFO    = "WEST-1DWEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00";  // Western European Time
+String ntpServer = "";
+String tzInfo = "";
 
 // ====== HC-SR04 Configuration ======
 #define HCSR04_TRIG_PIN 16
@@ -68,7 +73,7 @@ const unsigned long SHELLY_POLL_INTERVAL = 10000;  // poll every 10 seconds
 
 // ====== initial freferences ======
 Preferences prefs;
-const char* phaseNames[5] = { "", "Seedling/Clone", "Vegetative", "Flowering", "Harvest"};
+const char* phaseNames[5] = { "", "Seedling/Clone", "Vegetative", "Flowering", "Drying"};
 int curPhase;
 // Default VPD targets per phase
 const float defaultVPDs[5] = { 0.0f, 0.8f, 1.2f, 1.4f, 1.0f };
@@ -89,6 +94,7 @@ struct tm now;
 char actualDate[10];
 String startDate;
 String startFlowering;
+String startDrying;
 const char* DEFAULT_LIGHT_START = "03:00";
 const uint8_t DEFAULT_LIGHT_HOURS = 18;
 char* lightEnd;

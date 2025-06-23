@@ -44,7 +44,7 @@ window.addEventListener('load', updateSensorValues);
 function blinkElement(id) {
   const el = document.getElementById(id);
   el.classList.add('blink-text');
-  setTimeout(() => el.classList.remove('blink-text'), 500);
+  setTimeout(() => el.classList.remove('blink-text'), 1000);
 }
 
 //stausmessage section
@@ -104,6 +104,16 @@ document.getElementById('datum').textContent = d.toLocaleDateString('de-DE', {
   year: 'numeric',
   month: 'long',
   day: 'numeric'
+});
+
+// Populate dropdown with timezones
+const timezoneSelect = document.getElementById('timezone-select');
+const timezones = Intl.supportedValuesOf('timeZone'); // Fetch supported timezones
+timezones.forEach(tz => {
+  const option = document.createElement('option');
+  option.value = tz;
+  option.textContent = tz;
+  timezoneSelect.appendChild(option);
 });
 </script>
 )rawliteral";
